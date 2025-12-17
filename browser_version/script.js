@@ -644,7 +644,7 @@
       nameInput.type = "text";
       nameInput.placeholder = "Optional name (Prometheus label)";
       nameInput.value = getCanvasName(canvas, idx);
-      nameInput.style.cssText = "width: 100%; margin-top: 6px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;";
+      nameInput.style.cssText = "width: 90%; margin-top: 6px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;";
       nameInput.oninput = () => {
         saveCanvasName(canvas, nameInput.value, idx);
       };
