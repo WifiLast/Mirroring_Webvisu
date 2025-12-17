@@ -6,7 +6,7 @@ This folder contains a lightweight, browser-driven setup for mirroring WebVisu c
 - `script.js` – a Tampermonkey userscript that lets you pick canvases in the browser, polls them for changes, and posts SPS/tag values plus page context back to the backend.
 
 ## backend.py (Prometheus bridge)
-- Starts a Prometheus scrape endpoint on `PROM_PORT` (default 8077) using the default registry.
+- Starts a Prometheus scrape endpoint on `PROM_PORT` (default 8077) using the default registry; in the typical setup Prometheus itself runs in a Docker container and scrapes this endpoint from the host.
 - Accepts `POST /api/canvas-update` (single payload or `{updates: [...]}` batch), creating gauges named `<canvas>_<tag>` and setting their values.
 - Persists recently seen canvases and their tags in `metrics_store.json`, keyed by page URL, so the UI can auto-restore watches.
 - Provides `GET /api/metrics?page=<url>` to return stored canvases for a page.
@@ -17,6 +17,16 @@ This folder contains a lightweight, browser-driven setup for mirroring WebVisu c
 - Polls selected canvases, extracts SPS tag/value pairs, and batches updates to `/api/canvas-update` with the current `pageUrl`.
 - On load, calls `/api/metrics` for the current page and auto-watches canvases that were previously stored.
 - Uses Tampermonkey storage to remember backend URL, polling interval, and custom canvas names; exposes menu commands for configuration.
+
+## Browser requirements
+- Install the Tampermonkey extension (Chrome/Chromium, Edge, Firefox) and load `script.js` as a userscript.
+- Use a modern browser with canvas support and allow the script to reach the backend over HTTP(S).
+- Keep the page open while watching canvases; a future headless client will remove this requirement.
+
+## Roadmap / TODO
+- Headless client: run the picker/poller logic in a headless browser (e.g., Playwright/Chromium) to capture metrics without a manual session.
+- Legacy hardware: add a compatibility layer for older targets such as e!Cockpit/legacy WebVisu variants where canvas structures differ.
+- Browser UX: minor polish for the picker overlay and auto-reconnect to the backend when the network drops.
 
 ## Why canvas-only pages are hard to scrape
 - No DOM text: Canvas UIs draw pixels, not elements, so traditional scraping (DOM queries, innerText, ARIA) returns nothing.
