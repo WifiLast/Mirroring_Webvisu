@@ -25,7 +25,7 @@ This folder contains a lightweight, browser-driven setup for mirroring WebVisu c
 
 ## Roadmap / TODO
 - Headless client: run the picker/poller logic in a headless browser (e.g., Playwright/Chromium) to capture metrics without a manual session.
-- Legacy hardware: add a compatibility layer for older targets such as e!Cockpit/legacy WebVisu variants where canvas structures differ.
+- ~~Legacy hardware: add a compatibility layer for older targets such as e!Cockpit/legacy WebVisu variants where canvas structures differ.~~
 - Browser UX: minor polish for the picker overlay and auto-reconnect to the backend when the network drops.
 
 ## Why canvas-only pages are hard to scrape
