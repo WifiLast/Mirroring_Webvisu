@@ -1,0 +1,23 @@
+diff --git a/node_modules/jsdom/lib/jsdom/browser/Window.js b/node_modules/jsdom/lib/jsdom/browser/Window.js
+index 58f8b3c..c4f0203 100644
+--- a/node_modules/jsdom/lib/jsdom/browser/Window.js
++++ b/node_modules/jsdom/lib/jsdom/browser/Window.js
+@@
+   const oldCallback = callback;
+   callback = () => {
+     try {
+       oldCallback.apply(window._globalProxy, args);
+     } catch (e) {
+-      reportException(window, e, window.location.href);
++      // Ignore noisy WebVisu errors to keep the loop running
++      if (
++        e &&
++        e.message &&
++        (e.message.includes("Cannot set properties of undefined (setting 'position')") ||
++          e.message.includes("Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'"))
++      ) {
++        return;
++      }
++      reportException(window, e, window.location.href);
+     }
+   };

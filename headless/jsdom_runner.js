@@ -92,7 +92,7 @@ function mergeHeaders(provided = {}) {
   return { ...defaultHeaders, ...provided };
 }
 
-async function loadHtml({ url, html, headers }) {
+async function loadHtml({ url, html, headers, cookieJar }) {
   if (html) {
     return html;
   }
@@ -132,6 +132,8 @@ async function loadHtml({ url, html, headers }) {
     rejectUnauthorized: true,
   });
 
+  const jar = cookieJar || new CookieJar();
+
   try {
     const response = await got(url, {
       headers: mergedHeaders,
@@ -147,7 +149,7 @@ async function loadHtml({ url, html, headers }) {
       agent: {
         https: httpsAgent,  // Use custom agent with Chrome-like TLS
       },
-      cookieJar: new CookieJar(),  // Handle cookies properly
+      cookieJar: jar,  // Reuse jar so subsequent requests share cookies
     });
 
     return response.body;
@@ -446,6 +448,45 @@ function instrumentXHR(dom, logEntries, nextId) {
     return;
   }
 
+  // Helper to make binary requests using native Node.js http/https
+  const makeNativeBinaryRequest = async (url, body) => {
+    const URL = require('url');
+    const parsedUrl = new URL.URL(url);
+    const protocol = parsedUrl.protocol === 'https:' ? https : require('http');
+
+    return new Promise((resolve, reject) => {
+      const options = {
+        method: 'POST',
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port,
+        path: parsedUrl.pathname,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': Buffer.byteLength(body),
+          'Origin': `${parsedUrl.protocol}//${parsedUrl.host}`,
+          'User-Agent': defaultHeaders['User-Agent'],
+        },
+      };
+
+      const req = protocol.request(options, (res) => {
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode,
+            statusText: res.statusMessage,
+            headers: res.headers,
+            data: Buffer.concat(chunks),
+          });
+        });
+      });
+
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+  };
+
   class LoggingXHR extends NativeXHR {
     constructor() {
       super();
@@ -454,7 +495,15 @@ function instrumentXHR(dom, logEntries, nextId) {
         type: "xhr",
         timestamp: new Date().toISOString(),
       };
+      this._useNativeRequest = false;
+      this._nativeRequestPending = false;
+
       this.addEventListener("loadend", () => {
+        // Skip normal logging if we used native request
+        if (this._useNativeRequest) {
+          return;
+        }
+
         const entry = {
           ...this._logEntry,
           status: this.status,
@@ -473,33 +522,89 @@ function instrumentXHR(dom, logEntries, nextId) {
           }
         }
         logEntries.push(Object.freeze(entry));
+
+        // Dump failing binary responses for diagnostics
+        if (
+          entry.url &&
+          entry.url.toLowerCase().includes("webvisuv3") &&
+          entry.status >= 400 &&
+          this.response
+        ) {
+          try {
+            const buffer =
+              this.response instanceof ArrayBuffer
+                ? Buffer.from(this.response)
+                : Buffer.from(String(this.response));
+            process.stderr.write(
+              JSON.stringify({
+                type: "debug",
+                topic: "webvisu-recv",
+                url: entry.url,
+                status: entry.status,
+                length: buffer.length,
+                hex: buffer.subarray(0, 256).toString("hex"),
+              }) + "\n"
+            );
+          } catch (err) {
+            // ignore logging errors
+          }
+        }
       });
     }
 
     open(method, url, async = true, user, password) {
       this._logEntry.method = method || "GET";
-      this._logEntry.url = url;
-      // Make relative URLs absolute for WebVisuV3.bin
-      if (url && !url.startsWith('http') && url.includes('WebVisuV3.bin')) {
-        const baseUrl = this._logEntry && this._logEntry.baseURL || dom.window.location.href;
-        const fullUrl = new URL(url, baseUrl).href;
+      let targetUrl = url;
+      const isWebVisuBinary = url && url.includes("WebVisuV3");
+      // Normalize binary endpoint: allow override via payload.webVisuBinaryPath
+      if (isWebVisuBinary) {
+        const override =
+          (dom.window.__payloadWebVisuBinaryPath &&
+            String(dom.window.__payloadWebVisuBinaryPath)) ||
+          null;
+        if (override) {
+          targetUrl = override;
+        } else if (!url.includes("WebVisuV3_")) {
+          // Best-effort fallback: add device-specific suffix if missing
+          //targetUrl = url.replace("WebVisuV3.bin", "WebVisuV3_RLT_010113.bin");
+        }
+        // Ensure it stays under /webvisu/
+        if (targetUrl.startsWith("WebVisuV3")) {
+          targetUrl = `/webvisu/${targetUrl}`;
+        }
+      }
+      this._logEntry.url = targetUrl;
+      // Make relative URLs absolute
+      if (targetUrl && !targetUrl.startsWith("http")) {
+        const baseUrl =
+          (this._logEntry && this._logEntry.baseURL) || dom.window.location.href;
+        const fullUrl = new URL(targetUrl, baseUrl).href;
         super.open(method, fullUrl, async, user, password);
       } else {
-        super.open(method, url, async, user, password);
+        super.open(method, targetUrl, async, user, password);
       }
     }
 
     send(body) {
+      const isWebVisuBinary =
+        this._logEntry && this._logEntry.url && this._logEntry.url.toLowerCase().includes("webvisuv3");
+
       if (body !== null && body !== undefined) {
         let bodyString;
+        let bodyBuffer = null;
         if (typeof body === "string") {
           bodyString = body;
+          if (isWebVisuBinary) {
+            bodyBuffer = Buffer.from(bodyString, "utf8");
+          }
         } else if (Buffer.isBuffer(body)) {
           bodyString = body.toString("utf8");
+          bodyBuffer = body;
         } else if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
           // Handle ArrayBuffer and TypedArray views
           const buffer = body instanceof ArrayBuffer ? body : body.buffer;
-          bodyString = Buffer.from(buffer).toString("utf8");
+          bodyBuffer = Buffer.from(buffer);
+          bodyString = bodyBuffer.toString("utf8");
         } else {
           try {
             bodyString = JSON.stringify(body);
@@ -508,7 +613,117 @@ function instrumentXHR(dom, logEntries, nextId) {
           }
         }
         this._logEntry.requestBody = textSnippet(bodyString, 500);
+
+        // Debug logging for WebVisu binary exchanges
+        if (isWebVisuBinary) {
+          try {
+            const hexDump = bodyBuffer
+              ? bodyBuffer.subarray(0, 256).toString("hex")
+              : Buffer.from(String(bodyString || ""), "utf8").toString("hex");
+            process.stderr.write(
+              JSON.stringify({
+                type: "debug",
+                topic: "webvisu-send",
+                url: this._logEntry.url,
+                length: bodyBuffer ? bodyBuffer.length : (bodyString ? bodyString.length : 0),
+                hex: hexDump,
+              }) + "\n"
+            );
+          } catch (err) {
+            // ignore logging errors
+          }
+
+          // Use native Node.js HTTP for WebVisu binary requests (xhr2 incompatible with PLC)
+          this._useNativeRequest = true;
+          this._nativeRequestPending = true;
+
+          const fullUrl = this._logEntry.url.startsWith('http')
+            ? this._logEntry.url
+            : new URL(this._logEntry.url, dom.window.location.href).href;
+
+          makeNativeBinaryRequest(fullUrl, bodyBuffer || bodyString)
+            .then((result) => {
+              this._nativeRequestPending = false;
+
+              // Populate XHR object with response
+              Object.defineProperty(this, 'status', { value: result.status, writable: false, configurable: true });
+              Object.defineProperty(this, 'statusText', { value: result.statusText, writable: false, configurable: true });
+              Object.defineProperty(this, 'responseURL', { value: fullUrl, writable: false, configurable: true });
+
+              // Convert Buffer to ArrayBuffer for proper WebVisu handling
+              const arrayBuffer = result.data.buffer.slice(result.data.byteOffset, result.data.byteOffset + result.data.byteLength);
+              Object.defineProperty(this, 'response', { value: arrayBuffer, writable: false, configurable: true });
+              Object.defineProperty(this, 'responseType', { value: 'arraybuffer', writable: false, configurable: true });
+
+              // Log the native request
+              const entry = {
+                ...this._logEntry,
+                status: result.status,
+                statusText: result.statusText,
+                responseURL: fullUrl,
+                responseType: 'arraybuffer',
+                contentType: result.headers['content-type'],
+              };
+              logEntries.push(Object.freeze(entry));
+
+              // Debug logging for response
+              process.stderr.write(
+                JSON.stringify({
+                  type: "debug",
+                  topic: "webvisu-recv",
+                  url: fullUrl,
+                  status: result.status,
+                  length: result.data.length,
+                  hex: result.data.subarray(0, 256).toString("hex"),
+                }) + "\n"
+              );
+
+              // Trigger XHR state changes and events in proper order
+              // readyState 2 = HEADERS_RECEIVED
+              Object.defineProperty(this, 'readyState', { value: 2, writable: false, configurable: true });
+              this.dispatchEvent(new dom.window.Event('readystatechange'));
+
+              // readyState 3 = LOADING
+              Object.defineProperty(this, 'readyState', { value: 3, writable: false, configurable: true });
+              this.dispatchEvent(new dom.window.Event('readystatechange'));
+
+              // readyState 4 = DONE
+              Object.defineProperty(this, 'readyState', { value: 4, writable: false, configurable: true });
+              this.dispatchEvent(new dom.window.Event('readystatechange'));
+
+              // Trigger load events
+              this.dispatchEvent(new dom.window.Event('load'));
+              this.dispatchEvent(new dom.window.Event('loadend'));
+            })
+            .catch((err) => {
+              this._nativeRequestPending = false;
+
+              // Log error
+              const entry = {
+                ...this._logEntry,
+                error: err.message,
+              };
+              logEntries.push(Object.freeze(entry));
+
+              process.stderr.write(
+                JSON.stringify({
+                  type: "debug",
+                  topic: "webvisu-error",
+                  url: fullUrl,
+                  error: err.message,
+                }) + "\n"
+              );
+
+              // Trigger error event
+              this.dispatchEvent(new dom.window.Event('error'));
+              this.dispatchEvent(new dom.window.Event('loadend'));
+            });
+
+          return; // Don't call super.send()
+        }
       }
+
+      // For non-binary requests, use normal xhr2
       super.send(body);
     }
   }
@@ -560,25 +775,12 @@ function createVirtualConsole(consoleLogs, liveOutput = false) {
   let entryId = 0;
 
   const pushEntry = (entry) => {
-    // In live output mode, only store canvas-watcher messages to reduce memory
-    if (liveOutput && (!entry.message || !entry.message.includes("[canvas-watcher]"))) {
-      // Still capture in logs but don't store non-canvas messages
-      if (entry.message && entry.message.includes("[canvas-watcher]")) {
-        consoleLogs.push(Object.freeze(entry));
-        if (consoleLogs.length > MAX_CONSOLE_LOGS) {
-          consoleLogs.shift();
-        }
-        // Print canvas-watcher messages to stderr
-        process.stderr.write(JSON.stringify(entry) + "\n");
-      }
-      return;
-    }
     consoleLogs.push(Object.freeze(entry));
     if (consoleLogs.length > MAX_CONSOLE_LOGS) {
       consoleLogs.shift();
     }
-    // In live output mode, also print to stderr so it doesn't corrupt JSON output
-    if (liveOutput && entry.message && entry.message.includes("[canvas-watcher]")) {
+    if (liveOutput) {
+      // Stream virtual console messages to stderr so stdout stays valid JSON
       process.stderr.write(JSON.stringify(entry) + "\n");
     }
   };
@@ -611,7 +813,12 @@ function createVirtualConsole(consoleLogs, liveOutput = false) {
     });
   });
 
-  // Do not forward virtual console output to Node's stdout; it corrupts JSON output.
+  // Forward virtual console to stdout when liveOutput is enabled;
+  // otherwise keep it internal to avoid corrupting JSON output.
+  if (liveOutput) {
+    virtualConsole.sendTo(console, { omitJSDOMErrors: false });
+  }
+
   return virtualConsole;
 }
 
@@ -1016,7 +1223,8 @@ async function renderPagePayload(payload = {}, index = 0) {
 
   // runScripts: "outside-only", is probably not enough for all pages to work properly
   // { runScripts: "dangerously" } requires extended security considerations.
-  const html = await loadHtml(payload);
+  const sharedCookieJar = new CookieJar();
+  const html = await loadHtml({ ...payload, cookieJar: sharedCookieJar });
 
   // SECURITY WARNING: Running scripts from untrusted sources is dangerous!
   // By default we now allow dangerous script execution to better mimic real browsers;
@@ -1027,6 +1235,36 @@ async function renderPagePayload(payload = {}, index = 0) {
   const consoleLogs = [];
   const keepAliveLiveOutput = Boolean(payload.keepAlive);
   const virtualConsole = createVirtualConsole(consoleLogs, keepAliveLiveOutput);
+
+  // Log but don't crash on jsdomError events
+  virtualConsole.on("jsdomError", (error) => {
+    const errorMsg = error && error.message ? error.message : String(error);
+
+    // Suppress the specific "Cannot set properties of undefined (setting 'position')" error
+    // This is a non-critical WebVisu UI positioning issue that doesn't affect data communication
+    if (errorMsg.includes("Cannot set properties of undefined") && errorMsg.includes("position")) {
+      if (keepAliveLiveOutput) {
+        process.stderr.write(JSON.stringify({
+          type: "suppressed-error",
+          message: "Suppressed: Cannot set properties of undefined (setting 'position')",
+          timestamp: new Date().toISOString()
+        }) + "\n");
+      }
+      return; // Don't let this error propagate
+    }
+
+    // For other errors, log them but don't crash
+    if (keepAliveLiveOutput) {
+      process.stderr.write(JSON.stringify({
+        type: "jsdom-error",
+        message: errorMsg.substring(0, 500),
+        timestamp: new Date().toISOString()
+      }) + "\n");
+    }
+
+    // Don't let any jsdomError crash the process in keep-alive mode
+    return;
+  });
   const canvasRequested = wantsCanvasRendering(payload);
   let canvasSupportInfo = null;
 
@@ -1035,6 +1273,7 @@ async function renderPagePayload(payload = {}, index = 0) {
     pretendToBeVisual: true,
     runScripts: runScripts,
     resources: allowUnsafeScripts ? "usable" : undefined,
+    cookieJar: sharedCookieJar,
     virtualConsole,
     beforeParse(window) {
       // Make the environment look more like a real browser
@@ -1045,10 +1284,73 @@ async function renderPagePayload(payload = {}, index = 0) {
       Object.defineProperty(window.navigator, 'languages', {
         get: () => ['en-US', 'en']
       });
-      // Set a cookie to mimic browser behavior
+      // Set cookies to mimic browser behavior expected by WebVisu
       window.document.cookie = "OriginalDevicePixelRatio=1.25; path=/";
-      // Replace jsdom's stub XMLHttpRequest with real xhr2 implementation
-      window.XMLHttpRequest = XMLHttpRequest;
+      window.document.cookie = "DevicePixelRatioChanged=true; path=/";
+      // Expose binary path override from payload to XHR layer
+      if (payload && payload.webVisuBinaryPath) {
+        window.__payloadWebVisuBinaryPath = payload.webVisuBinaryPath;
+      }
+
+      // Prevent crashes from invalid appendChild calls in WebVisu: ignore non-Node children
+      if (window.Node && window.Node.prototype && typeof window.Node.prototype.appendChild === "function") {
+        const originalAppendChild = window.Node.prototype.appendChild;
+        window.Node.prototype.appendChild = function patchedAppendChild(child) {
+          if (!child || typeof child.nodeType !== "number") {
+            return child;
+          }
+          return originalAppendChild.call(this, child);
+        };
+      }
+
+      // Filter noisy imagepool warnings that clutter logs
+      if (window.console && typeof window.console.warn === "function") {
+        const originalWarn = window.console.warn.bind(window.console);
+        window.console.warn = function patchedWarn(...args) {
+          const message = args && args.length ? String(args[0]) : "";
+          if (message.includes("Imagepoolentry for") && message.includes("not found")) {
+            return;
+          }
+          return originalWarn(...args);
+        };
+      }
+
+      // Patch common DOM methods that WebVisu uses to ensure they don't return undefined
+      // WebVisu code crashes when trying to access .style on undefined elements
+      const originalGetElementById = window.document.getElementById;
+      window.document.getElementById = function(id) {
+        const element = originalGetElementById.call(this, id);
+        if (!element) {
+          window.console.warn(`[jsdom-patch] getElementById("${id}") returned null - WebVisu may expect this element`);
+        }
+        return element;
+      };
+
+      const originalQuerySelector = window.document.querySelector;
+      window.document.querySelector = function(selector) {
+        const element = originalQuerySelector.call(this, selector);
+        if (!element) {
+          window.console.warn(`[jsdom-patch] querySelector("${selector}") returned null`);
+        }
+        return element;
+      };
+
+      // Patch HTMLElement to ensure style property is never undefined
+      const OriginalElement = window.HTMLElement;
+      if (OriginalElement && OriginalElement.prototype) {
+        const styleDescriptor = Object.getOwnPropertyDescriptor(OriginalElement.prototype, 'style');
+        if (styleDescriptor && styleDescriptor.get) {
+          const originalGet = styleDescriptor.get;
+          Object.defineProperty(OriginalElement.prototype, 'style', {
+            ...styleDescriptor,
+            get: function() {
+              const style = originalGet.call(this);
+              return style || {};
+            }
+          });
+        }
+      }
+
       if (canvasRequested) {
         canvasSupportInfo = installCanvasSupport(window, {
           enableWebgl: payload.enableWebglRendering !== false,
@@ -1056,6 +1358,83 @@ async function renderPagePayload(payload = {}, index = 0) {
         // Install canvas watcher after canvas support is set up
         // We defer the actual injection until after page loads when contexts are created
         window.__deferredCanvasWatcher = true;
+      }
+      // Ensure CanvasRenderingContext2D always exposes a canvas with a style object
+      if (window.CanvasRenderingContext2D && window.CanvasRenderingContext2D.prototype) {
+        if (!Object.getOwnPropertyDescriptor(window.CanvasRenderingContext2D.prototype, "canvas")) {
+          Object.defineProperty(window.CanvasRenderingContext2D.prototype, "canvas", {
+            configurable: true,
+            enumerable: true,
+            get() {
+              if (!this.__canvas) {
+                this.__canvas = { style: {} };
+              } else if (!this.__canvas.style) {
+                this.__canvas.style = {};
+              }
+              return this.__canvas;
+            },
+            set(value) {
+              this.__canvas = value;
+              if (this.__canvas && !this.__canvas.style) {
+                this.__canvas.style = {};
+              }
+            },
+          });
+        }
+      }
+      // Fallback: ensure getContext("2d") returns an object with a canvas property
+      const originalGetContext =
+        window.HTMLCanvasElement &&
+        window.HTMLCanvasElement.prototype &&
+        window.HTMLCanvasElement.prototype.getContext;
+      if (originalGetContext) {
+        window.HTMLCanvasElement.prototype.getContext = function patchedGetContext(type, ...rest) {
+          const ctx = originalGetContext.call(this, type, ...rest);
+          const wants2d = String(type).toLowerCase() === "2d";
+          if (ctx) {
+            if (!ctx.canvas) {
+              try {
+                Object.defineProperty(ctx, "canvas", {
+                  configurable: true,
+                  enumerable: false,
+                  value: this,
+                });
+              } catch (err) {
+                ctx.canvas = this; // fallback assignment
+              }
+            }
+            return ctx;
+          }
+          if (wants2d) {
+            // Minimal stub context with required properties
+            const stub = {
+              canvas: this,
+              fillRect() {},
+              clearRect() {},
+              beginPath() {},
+              moveTo() {},
+              lineTo() {},
+              stroke() {},
+              fillText() {},
+              strokeText() {},
+              measureText() {
+                return { width: 0 };
+              },
+              save() {},
+              restore() {},
+              translate() {},
+              scale() {},
+              rotate() {},
+              rect() {},
+              putImageData() {},
+              getImageData() {
+                return { data: [], width: this.width || 0, height: this.height || 0 };
+              },
+            };
+            return stub;
+          }
+          return ctx;
+        };
       }
     }
   });
@@ -1125,7 +1504,7 @@ async function renderPagePayload(payload = {}, index = 0) {
     items: Object.freeze(selectors),
     structure,
     searchResults: Object.freeze(searchResults),
-    networkRequests: Object.freeze(networkRequests),
+    networkRequests: Object.freeze(networkRequests.slice()),
     consoleLogs: Object.freeze(consoleLogs.slice()),
   };
   if (canvasSupportInfo) {
