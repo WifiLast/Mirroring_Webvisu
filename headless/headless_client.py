@@ -75,7 +75,7 @@ class HeadlessClient:
             str(self.runner_path),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=sys.stderr,  # Pass stderr through for logs
+            stderr=asyncio.subprocess.PIPE,
         )
 
     async def send_command(self, payload: Dict[str, Any]):
@@ -104,6 +104,14 @@ class HeadlessClient:
             return json.loads(line.decode("utf-8"))
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Failed to parse response: {line.decode('utf-8')[:200]}...") from exc
+
+    async def iter_stderr(self):
+        """Async iterator for stderr lines"""
+        if not self.process or not self.process.stderr: return
+        while True:
+            line = await self.process.stderr.readline()
+            if not line: break
+            yield line.decode("utf-8")
 
     async def stop(self):
         """
@@ -141,23 +149,73 @@ async def run_once(url: str, return_dom: bool = False):
 async def run_continuous(url: str, return_dom: bool = False):
     """
     Run in keep-alive mode to demonstrate data exchange capability.
+    The Node.js runner handles Prometheus metrics internally.
     """
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    
     client = HeadlessClient()
     async with client:
-        # Initial load
+        # Task to read stderr (logs from Node.js)
+        async def process_stderr():
+            async for line in client.iter_stderr():
+                line = line.strip()
+                if not line: continue
+                # We can just output them or filter them.
+                # Node process now handles metrics, so we just log important stuff or everything
+                sys.stderr.write(line + "\n")
+
+        # Task to read stdout (responses to commands) to avoid pipe blocking
+        async def process_stdout():
+            while True:
+                try:
+                    await client.read_response()
+                except (RuntimeError, asyncio.CancelledError):
+                    break
+        
+        # Task to keep page alive with mouse movements
+        async def keep_alive_pinger():
+            while True:
+                await asyncio.sleep(5)
+                try:
+                    await client.send_command({
+                        "simulateMouseMovements": {
+                            "count": 1,
+                            "minDelayMs": 10,
+                            "maxDelayMs": 20
+                        }
+                    })
+                except Exception:
+                    break
+
+        stderr_task = asyncio.create_task(process_stderr())
+
         sys.stderr.write(f"Loading {url}...\n")
         payload = build_payload(url, return_dom=return_dom, keep_alive=True)
         await client.send_command(payload)
         
-        response = await client.read_response()
-        sys.stderr.write("Initial Load Complete.\n")
-        print(json.dumps(response, indent=2))
-        
-        # Here we could exchange more data if the runner supports it
-        # For now, we just wait for user interrupt
-        sys.stderr.write("Press Ctrl+C to stop...\n")
-        while True:
-            await asyncio.sleep(1)
+        try:
+            response = await client.read_response()
+            sys.stderr.write("Initial Load Complete.\n")
+            # We assume Node started Prometheus server if it could.
+            print(json.dumps(response, indent=2))
+            
+            stdout_task = asyncio.create_task(process_stdout())
+            keep_alive_task = asyncio.create_task(keep_alive_pinger())
+            
+            sys.stderr.write("Press Ctrl+C to stop...\n")
+            while True:
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            pass
+        except KeyboardInterrupt:
+            pass
+        finally:
+            stderr_task.cancel()
+            if 'stdout_task' in locals(): stdout_task.cancel()
+            if 'keep_alive_task' in locals(): keep_alive_task.cancel()
+            
+            # Use gather to let them finish cleaning up
+            await asyncio.gather(stderr_task, return_exceptions=True)
 
 
 def main() -> int:

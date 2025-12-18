@@ -47,6 +47,92 @@ try {
 const CANVAS_BACKING_SYMBOL = Symbol("canvasBackingStore");
 const WEBGL_CONTEXT_SYMBOL = Symbol("webglContext");
 
+// Prometheus Metrics Integration
+const promClient = require("prom-client");
+const fs = require("fs");
+const path = require("path");
+const http = require("http");
+
+const PROM_PORT = 8077;
+const STORE_PATH = path.join(__dirname, "metrics_store.json");
+const servicesRegistry = new promClient.Registry();
+const gauges = new Map();
+
+// Helper to sanitize metric names
+function sanitizeName(name, defaultVal = "value") {
+  let clean = String(name || "").trim().replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_");
+  if (!clean) clean = defaultVal;
+  if (/^\d/.test(clean)) clean = `m_${clean}`;
+  return clean.toLowerCase();
+}
+
+function buildMetricName(canvasName, tag) {
+  const tagPart = sanitizeName(tag, "value");
+  const canvasPart = sanitizeName(canvasName, "canvas");
+  return canvasPart ? `${canvasPart}_${tagPart}` : tagPart;
+}
+
+function getGauge(name, help) {
+  if (!gauges.has(name)) {
+    const gauge = new promClient.Gauge({
+      name,
+      help,
+      registers: [servicesRegistry]
+    });
+    gauges.set(name, gauge);
+  }
+  return gauges.get(name);
+}
+
+// Load initial metrics from store
+try {
+  if (fs.existsSync(STORE_PATH)) {
+    const data = JSON.parse(fs.readFileSync(STORE_PATH, "utf8"));
+    Object.values(data).forEach(page => {
+      if (page.canvases) {
+        Object.entries(page.canvases).forEach(([key, info]) => {
+          const canvasName = info.canvasName || key;
+          (info.tags || []).forEach(tagEntry => {
+            const metricName = buildMetricName(canvasName, tagEntry.tag);
+            const val = parseFloat(String(tagEntry.value).replace(",", "."));
+            if (!isNaN(val)) {
+              getGauge(metricName, `${canvasName} - ${tagEntry.tag}`).set(val);
+            }
+          });
+        });
+      }
+    });
+    console.warn(`[prometheus] Initialized metrics from ${STORE_PATH}`);
+  }
+} catch (err) {
+  console.warn(`[prometheus] Failed to load metrics store: ${err.message}`);
+}
+
+// Start Prometheus Metrics Server
+const metricsServer = http.createServer(async (req, res) => {
+  if (req.url === "/metrics") {
+    try {
+      res.setHeader("Content-Type", servicesRegistry.contentType);
+      res.end(await servicesRegistry.metrics());
+    } catch (ex) {
+      res.statusCode = 500;
+      res.end(ex.message);
+    }
+  } else {
+    res.statusCode = 404;
+    res.end("Not Found");
+  }
+});
+
+metricsServer.on("error", (err) => {
+  console.warn(`[prometheus] Server error: ${err.message}`);
+});
+
+metricsServer.listen(PROM_PORT, () => {
+  console.warn(`[prometheus] Server listening on port ${PROM_PORT}`);
+});
+
+
 // NOTE: Prototype freezing was removed as it causes issues with some websites
 // that need to modify arrays/objects during page load (e.g., "Cannot assign to
 // read only property 'length'"). Security is maintained through other measures.
@@ -884,6 +970,18 @@ function injectCanvasValueWatcher(window) {
         previous,
         type,
       });
+
+      // Update Prometheus Metric (if available)
+      try {
+        const valNum = parseFloat(String(value).replace(",", "."));
+        if (!isNaN(valNum) && typeof getGauge === "function" && typeof buildMetricName === "function") {
+          // Use 'value' as default tag to match previous behavior
+          const mName = buildMetricName(canvasId, "value");
+          getGauge(mName, `${canvasId} value`).set(valNum);
+        }
+      } catch (err) {
+        // ignore update errors
+      }
     }
     // Don't log redrawn messages - they create too much noise
   };
@@ -911,15 +1009,17 @@ function installCanvasSupport(window, options = {}) {
     webglEnabled: false,
     warnings: [],
   };
+  // Ensure the info object is mutable (avoid assigning to a frozen object)
+  const result = { ...info };
 
   if (!canvasModuleAvailable || !canvasModule || typeof canvasModule.createCanvas !== "function") {
-    info.warnings.push("node-canvas module is not installed; canvas rendering disabled");
-    return info;
+    result.warnings.push("node-canvas module is not installed; canvas rendering disabled");
+    return result;
   }
 
   if (!window || !window.HTMLCanvasElement || !window.HTMLCanvasElement.prototype) {
-    info.warnings.push("HTMLCanvasElement prototype is unavailable in jsdom window");
-    return info;
+    result.warnings.push("HTMLCanvasElement prototype is unavailable in jsdom window");
+    return result;
   }
 
   const prototype = window.HTMLCanvasElement.prototype;
@@ -983,7 +1083,7 @@ function installCanvasSupport(window, options = {}) {
           value: this,
         });
       }
-      info.canvasEnabled = true;
+      result.canvasEnabled = true;
       return context;
     }
     if ((contextType === "webgl" || contextType === "experimental-webgl") && enableWebgl) {
@@ -1005,7 +1105,7 @@ function installCanvasSupport(window, options = {}) {
           this[WEBGL_CONTEXT_SYMBOL].canvas = this;
         }
       }
-      info.webglEnabled = Boolean(this[WEBGL_CONTEXT_SYMBOL]);
+      result.webglEnabled = Boolean(this[WEBGL_CONTEXT_SYMBOL]);
       return this[WEBGL_CONTEXT_SYMBOL];
     }
     return originalGetContext ? originalGetContext.call(this, type, ...rest) : null;
@@ -1091,7 +1191,7 @@ function installCanvasSupport(window, options = {}) {
   }
 
   prototype.__canvasPolyfillInstalled = info;
-  return info;
+  return result;
 }
 
 function captureCanvasSnapshots(dom, snapshotRequests = []) {

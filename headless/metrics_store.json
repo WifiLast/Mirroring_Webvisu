@@ -2,7 +2,7 @@
   "http://192.168.1.200:8080/webvisu/webvisu.htm": {
     "canvases": {
       "ok": {
-        "canvasId": "cdsCanvas_1_12_30",
+        "canvasId": "cdsCanvas_1_12_35",
         "canvasName": "ok",
         "lastSeen": 1765986844.819558,
         "pageUrl": "http://192.168.1.200:8080/webvisu/webvisu.htm",
