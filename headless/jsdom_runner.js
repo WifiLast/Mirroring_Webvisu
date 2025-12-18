@@ -163,10 +163,10 @@ async function loadHtml({ url, html, headers, cookieJar }) {
       const isCloudflareChallenge = (
         statusCode === 403 &&
         (body.includes('Cloudflare') ||
-         body.includes('cf-browser-verification') ||
-         body.includes('cf_chl_opt') ||
-         body.includes('cf-challenge-running') ||
-         body.includes('Checking your browser'))
+          body.includes('cf-browser-verification') ||
+          body.includes('cf_chl_opt') ||
+          body.includes('cf-challenge-running') ||
+          body.includes('Checking your browser'))
       );
 
       if (isCloudflareChallenge) {
@@ -815,9 +815,9 @@ function createVirtualConsole(consoleLogs, liveOutput = false) {
 
   // Forward virtual console to stdout when liveOutput is enabled;
   // otherwise keep it internal to avoid corrupting JSON output.
-  if (liveOutput) {
-    virtualConsole.sendTo(console, { omitJSDOMErrors: false });
-  }
+  // if (liveOutput) {
+  //   virtualConsole.sendTo(console, { omitJSDOMErrors: false });
+  // }
 
   return virtualConsole;
 }
@@ -1318,7 +1318,7 @@ async function renderPagePayload(payload = {}, index = 0) {
       // Patch common DOM methods that WebVisu uses to ensure they don't return undefined
       // WebVisu code crashes when trying to access .style on undefined elements
       const originalGetElementById = window.document.getElementById;
-      window.document.getElementById = function(id) {
+      window.document.getElementById = function (id) {
         const element = originalGetElementById.call(this, id);
         if (!element) {
           window.console.warn(`[jsdom-patch] getElementById("${id}") returned null - WebVisu may expect this element`);
@@ -1327,7 +1327,7 @@ async function renderPagePayload(payload = {}, index = 0) {
       };
 
       const originalQuerySelector = window.document.querySelector;
-      window.document.querySelector = function(selector) {
+      window.document.querySelector = function (selector) {
         const element = originalQuerySelector.call(this, selector);
         if (!element) {
           window.console.warn(`[jsdom-patch] querySelector("${selector}") returned null`);
@@ -1343,7 +1343,7 @@ async function renderPagePayload(payload = {}, index = 0) {
           const originalGet = styleDescriptor.get;
           Object.defineProperty(OriginalElement.prototype, 'style', {
             ...styleDescriptor,
-            get: function() {
+            get: function () {
               const style = originalGet.call(this);
               return style || {};
             }
@@ -1409,24 +1409,24 @@ async function renderPagePayload(payload = {}, index = 0) {
             // Minimal stub context with required properties
             const stub = {
               canvas: this,
-              fillRect() {},
-              clearRect() {},
-              beginPath() {},
-              moveTo() {},
-              lineTo() {},
-              stroke() {},
-              fillText() {},
-              strokeText() {},
+              fillRect() { },
+              clearRect() { },
+              beginPath() { },
+              moveTo() { },
+              lineTo() { },
+              stroke() { },
+              fillText() { },
+              strokeText() { },
               measureText() {
                 return { width: 0 };
               },
-              save() {},
-              restore() {},
-              translate() {},
-              scale() {},
-              rotate() {},
-              rect() {},
-              putImageData() {},
+              save() { },
+              restore() { },
+              translate() { },
+              scale() { },
+              rotate() { },
+              rect() { },
+              putImageData() { },
               getImageData() {
                 return { data: [], width: this.width || 0, height: this.height || 0 };
               },
@@ -1519,66 +1519,107 @@ async function renderPagePayload(payload = {}, index = 0) {
   if (payload.returnDom) {
     output.domHtml = dom.serialize();
   }
+  // Internal: Expose DOM state for persistent sessions
+  Object.defineProperty(output, "_dom", { value: dom, enumerable: false });
+  Object.defineProperty(output, "_virtualConsole", { value: virtualConsole, enumerable: false });
   return output;
 }
 
+
 async function main() {
-  const rawInput = await readStdin();
-  if (!rawInput) {
-    throw new Error("Missing JSON payload via stdin");
-  }
+  const readline = require("readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: false
+  });
 
-  let payload;
-  try {
-    payload = JSON.parse(rawInput);
-  } catch (err) {
-    throw new Error(`Invalid JSON payload: ${err.message}`);
-  }
-  const keepAlive = Boolean(payload && payload.keepAlive);
+  let pageState = null;
 
-  const pagePayloads = Array.isArray(payload.pages) ? payload.pages : null;
-  if (pagePayloads && pagePayloads.length) {
-    const results = [];
-    for (let index = 0; index < pagePayloads.length; index += 1) {
-      const entry = pagePayloads[index];
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+
+    let payload;
+    try {
+      payload = JSON.parse(line);
+    } catch (err) {
+      process.stderr.write(`Invalid JSON payload: ${err.message}\n`);
+      continue;
+    }
+
+    // Support 'exit' command
+    if (payload.exit) {
+      process.exit(0);
+    }
+
+    if (!pageState) {
+      // INITIALIZATION
       try {
-        const rendered = await renderPagePayload(entry, index);
-        results.push(Object.freeze(rendered));
+        if (payload.pages) {
+          throw new Error("Multi-page payload not supported in continuous stream mode");
+        }
+
+        // This function will now return output with hidden _dom property
+        const result = await renderPagePayload(payload);
+
+        // Save state if keepAlive is requested
+        if (payload.keepAlive) {
+          pageState = {
+            dom: result._dom,
+            virtualConsole: result._virtualConsole
+          };
+        }
+
+        // Output result (Properties _dom and _virtualConsole are not enumerable)
+        process.stdout.write(JSON.stringify(result) + "\n");
+
+        if (!payload.keepAlive) {
+          process.exit(0);
+        }
+
       } catch (err) {
-        const contextId =
-          entry && Object.prototype.hasOwnProperty.call(entry, "contextId")
-            ? entry.contextId
-            : null;
-        results.push(
-          Object.freeze({
-            contextId,
-            url: entry && entry.url ? entry.url : null,
-            error: err && err.message ? err.message : String(err),
-          })
-        );
+        process.stdout.write(JSON.stringify({ error: err.message }) + "\n");
+        // If initialization fails, we probably should exit or let them try again?
+        // Let's stay alive to allow retry or inspection
+      }
+    } else {
+      // COMMAND PROCESSING
+      try {
+        const dom = pageState.dom;
+        const output = { contextId: payload.contextId || null };
+        let actionTaken = false;
+
+        if (payload.selectors) {
+          output.items = extractSelectors(dom, payload.selectors);
+          actionTaken = true;
+        }
+
+        if (payload.searchQueries) {
+          output.searchResults = searchDom(dom, payload.searchQueries);
+          actionTaken = true;
+        }
+
+        if (payload.evaluate) {
+          executeSnippets(dom, payload.evaluate);
+          output.evaluated = true;
+          actionTaken = true;
+        }
+
+        if (payload.simulateMouseMovements) {
+          output.mouseMovements = await simulateMouseMovements(dom, payload.simulateMouseMovements);
+          actionTaken = true;
+        }
+
+        // If they just want a snapshot of the current state
+        if (!actionTaken && payload.returnStructure) {
+          output.structure = buildStructure(dom, payload.structureOptions || {});
+        }
+
+        process.stdout.write(JSON.stringify(output) + "\n");
+      } catch (err) {
+        process.stdout.write(JSON.stringify({ error: err.message }) + "\n");
       }
     }
-    process.stdout.write(JSON.stringify(Object.freeze({ results })));
-    process.stdout.write("\n");
-    if (keepAlive) {
-      setInterval(() => {}, 3600000);
-    }
-    return;
-  }
-
-  if (!payload.url && !payload.html) {
-    throw new Error("Payload must include a `url` or `html` field");
-  }
-
-  const result = await renderPagePayload(payload, 0);
-  process.stdout.write(JSON.stringify(Object.freeze(result)));
-  process.stdout.write("\n");
-  if (keepAlive) {
-    // In keep-alive mode, continue to monitor console output
-    // The virtual console is already set up to capture logs
-    // We just need to keep the process running
-    setInterval(() => {}, 3600000);
-    return;
   }
 }
 

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Small helper client that drives the jsdom-based runner from Python to fetch
-and render a Codesys WebVisu page. It shells out to `jsdom_runner.js`, passes a
-JSON payload via stdin, and prints the structured JSON result to stdout.
+Async client that drives the jsdom-based runner from Python to fetch
+and render a Codesys WebVisu page. It uses asyncio to manage the subprocess
+and exchange data via stdin/stdout.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
-import subprocess
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -49,58 +50,119 @@ def build_payload(url: str, return_dom: bool = False, keep_alive: bool = False) 
     }
 
 
-def run_jsdom(url: str, return_dom: bool = False) -> Dict[str, Any]:
+class HeadlessClient:
     """
-    Execute the Node-based jsdom runner with the given URL.
+    Async wrapper around the jsdom execution.
     """
-    runner_path = Path(__file__).with_name("jsdom_runner.js")
-    if not runner_path.exists():
-        raise FileNotFoundError(f"jsdom runner not found at {runner_path}")
 
-    payload = build_payload(url, return_dom=return_dom)
-    process = subprocess.run(
-        ["node", str(runner_path)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    def __init__(self, runner_path: Optional[Path] = None):
+        if runner_path is None:
+            self.runner_path = Path(__file__).with_name("jsdom_runner.js")
+        else:
+            self.runner_path = runner_path
+        
+        if not self.runner_path.exists():
+            raise FileNotFoundError(f"jsdom runner not found at {self.runner_path}")
+            
+        self.process: Optional[asyncio.subprocess.Process] = None
 
-    if process.returncode != 0:
-        stderr = process.stderr.strip()
-        raise RuntimeError(f"jsdom runner failed (exit {process.returncode}): {stderr}")
+    async def start(self):
+        """
+        Start the node subprocess.
+        """
+        self.process = await asyncio.create_subprocess_exec(
+            "node",
+            str(self.runner_path),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=sys.stderr,  # Pass stderr through for logs
+        )
 
-    try:
-        return json.loads(process.stdout)
-    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-        raise RuntimeError(f"Failed to parse jsdom output: {exc}") from exc
+    async def send_command(self, payload: Dict[str, Any]):
+        """
+        Send a JSON command to the running process.
+        """
+        if not self.process or not self.process.stdin:
+            raise RuntimeError("Process not running or stdin not available")
+        
+        data = json.dumps(payload) + "\n"
+        self.process.stdin.write(data.encode("utf-8"))
+        await self.process.stdin.drain()
+
+    async def read_response(self) -> Dict[str, Any]:
+        """
+        Read a JSON response line from the process.
+        """
+        if not self.process or not self.process.stdout:
+            raise RuntimeError("Process not running or stdout not available")
+            
+        line = await self.process.stdout.readline()
+        if not line:
+            raise RuntimeError("Process output ended unexpectedly")
+            
+        try:
+            return json.loads(line.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Failed to parse response: {line.decode('utf-8')[:200]}...") from exc
+
+    async def stop(self):
+        """
+        Terminate the process.
+        """
+        if self.process:
+            try:
+                self.process.terminate()
+                await self.process.wait()
+            except ProcessLookupError:
+                pass
+            finally:
+                self.process = None
+
+    async def __aenter__(self):
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.stop()
 
 
-def launch_jsdom_keep_alive(url: str, return_dom: bool = False) -> subprocess.Popen:
+async def run_once(url: str, return_dom: bool = False):
     """
-    Start the jsdom runner once and keep the page running until the user stops it.
-    Stdout/stderr are inherited so logs/JSON flow directly to the console.
+    Run a single fetch and return the result.
     """
-    runner_path = Path(__file__).with_name("jsdom_runner.js")
-    if not runner_path.exists():
-        raise FileNotFoundError(f"jsdom runner not found at {runner_path}")
-
-    payload = build_payload(url, return_dom=return_dom, keep_alive=True)
-    process = subprocess.Popen(
-        ["node", str(runner_path)],
-        stdin=subprocess.PIPE,
-        text=True,
-    )
-    if process.stdin is None:  # pragma: no cover - defensive
-        raise RuntimeError("Failed to open stdin for jsdom runner")
-    process.stdin.write(json.dumps(payload))
-    process.stdin.close()
-    return process
+    client = HeadlessClient()
+    async with client:
+        payload = build_payload(url, return_dom=return_dom, keep_alive=False)
+        await client.send_command(payload)
+        response = await client.read_response()
+        print(json.dumps(response, indent=2))
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+async def run_continuous(url: str, return_dom: bool = False):
+    """
+    Run in keep-alive mode to demonstrate data exchange capability.
+    """
+    client = HeadlessClient()
+    async with client:
+        # Initial load
+        sys.stderr.write(f"Loading {url}...\n")
+        payload = build_payload(url, return_dom=return_dom, keep_alive=True)
+        await client.send_command(payload)
+        
+        response = await client.read_response()
+        sys.stderr.write("Initial Load Complete.\n")
+        print(json.dumps(response, indent=2))
+        
+        # Here we could exchange more data if the runner supports it
+        # For now, we just wait for user interrupt
+        sys.stderr.write("Press Ctrl+C to stop...\n")
+        while True:
+            await asyncio.sleep(1)
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Headless client that fetches a Codesys WebVisu page via jsdom.",
+        description="Async Headless client for Codesys WebVisu.",
     )
     parser.add_argument(
         "--url",
@@ -117,36 +179,20 @@ def main(argv: Optional[list[str]] = None) -> int:
         action="store_true",
         help="Render the page once and exit (default: keep the page running).",
     )
-    args = parser.parse_args(argv)
-
-    if args.once:
-        try:
-            result = run_jsdom(args.url, return_dom=args.return_dom)
-            sys.stdout.write(json.dumps(result, indent=2))
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-        except Exception as exc:  # pragma: no cover - CLI path
-            sys.stderr.write(f"Error: {exc}\n")
-            return 1
-        return 0
+    args = parser.parse_args()
 
     try:
-        process = launch_jsdom_keep_alive(args.url, return_dom=args.return_dom)
-    except Exception as exc:  # pragma: no cover - CLI path
+        if args.once:
+            asyncio.run(run_once(args.url, args.return_dom))
+        else:
+            asyncio.run(run_continuous(args.url, args.return_dom))
+    except KeyboardInterrupt:
+        sys.stderr.write("\nStopping...\n")
+    except Exception as exc:
         sys.stderr.write(f"Error: {exc}\n")
         return 1
-
-    sys.stderr.write("Page is running; press Ctrl+C to stop.\n")
-    try:
-        return process.wait()
-    except KeyboardInterrupt:  # pragma: no cover - CLI path
-        sys.stderr.write("Stopping...\n")
-        process.terminate()
-        try:
-            return process.wait(timeout=5)
-        except subprocess.TimeoutExpired:  # pragma: no cover - defensive
-            process.kill()
-            return process.wait()
+    
+    return 0
 
 
 if __name__ == "__main__":
