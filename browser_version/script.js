@@ -63,6 +63,12 @@
   const log = () => {}; // disabled
   const warn = () => {}; // disabled
 
+  function sameRegion(r1, r2) {
+    if (!r1 && !r2) return true;
+    if (!r1 || !r2) return false;
+    return r1.x === r2.x && r1.y === r2.y && r1.w === r2.w && r1.h === r2.h;
+  }
+
   // Inject the SPS value tracker if it doesn't exist
   function injectSPSValueTracker() {
     if (pageWindow.spsValueTracker) {
@@ -535,8 +541,12 @@
     return resolved;
   }
 
-  function isCanvasWatched(canvas) {
-    return state.watchers.some(w => w.canvas === canvas || (w.canvas && canvas && w.canvas.id && w.canvas.id === canvas.id));
+  function isCanvasWatched(canvas, region) {
+    return state.watchers.some(w => {
+      const canvasMatch = w.canvas === canvas || (w.canvas && canvas && w.canvas.id && w.canvas.id === canvas.id);
+      if (!canvasMatch) return false;
+      return sameRegion(w.region, region || null);
+    });
   }
 
   function findCanvasForStored(stored) {
@@ -550,9 +560,14 @@
     });
   }
 
+  function isOldWebvisu() {
+    return !!(pageWindow.Db && pageWindow.Db.prototype && typeof pageWindow.Db.prototype.Tz === "function");
+  }
+
   function showCanvasPicker(canvases) {
     state.selecting = true;
-    const selectedCanvases = [];
+    const selectedItems = [];
+    const useValueMode = isOldWebvisu();
 
     const modal = document.createElement("div");
     modal.style.cssText = `
@@ -590,106 +605,234 @@
     const list = document.createElement("div");
     const headerLabel = document.createElement("div");
     headerLabel.style.cssText = "font-size: 12px; color: #444; margin-bottom: 4px;";
-    headerLabel.textContent = "Green items are already being watched.";
+    headerLabel.textContent = useValueMode
+      ? "Click a value to watch that region (green = already watched)."
+      : "Green items are already being watched.";
     list.appendChild(headerLabel);
 
-    canvases.forEach((canvas, idx) => {
-      const rect = canvas.getBoundingClientRect();
-      const item = document.createElement("div");
-      const alreadyWatched = isCanvasWatched(canvas);
-      item.style.cssText = `
-        padding: 12px; margin: 8px 0; border: 2px solid #ddd;
-        border-radius: 4px; cursor: pointer; background: #f9f9f9;
-        transition: all 0.2s;
-      `;
+    function regionForValue(canvas, v) {
+      const padX = 80;
+      const padY = 30;
+      const x = Math.max(0, Math.floor(v.x - padX / 2));
+      const y = Math.max(0, Math.floor(v.y - padY / 2));
+      const w = Math.min(canvas.width - x, Math.floor(padX));
+      const h = Math.min(canvas.height - y, Math.floor(padY));
+      return { x, y, w, h, label: v.tag || null, value: v.value };
+    }
 
-      const id = canvas.id || `canvas-${idx}`;
-      const zIndex = window.getComputedStyle(canvas).zIndex;
-      const classes = canvas.className || "(no class)";
-      getCanvasKey(canvas, idx);
+    function timeAgo(ts) {
+      if (!ts) return "";
+      const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+      if (sec < 60) return `${sec}s ago`;
+      const min = Math.floor(sec / 60);
+      return `${min}m ago`;
+    }
 
-      const spsValues = getCanvasValues(canvas);
-      const spsValuesDetailed = extractSPSValues(canvas);
+    if (useValueMode) {
+      const valueEntries = [];
+      canvases.forEach((canvas, idx) => {
+        const values = extractSPSValues(canvas);
+        if (values.length === 0) {
+          valueEntries.push({ canvas, canvasIdx: idx, value: null, region: null, label: null });
+        } else {
+          values.forEach((v, vIdx) => {
+            valueEntries.push({
+              canvas,
+              canvasIdx: idx,
+              valueIdx: vIdx,
+              value: v,
+              region: regionForValue(canvas, v),
+              label: v.tag || v.value || null
+            });
+          });
+        }
+      });
 
-      let valuesHtml = '';
-      if (spsValues.length > 0) {
-        const valuesList = spsValues.slice(0, 5).join(', ');
-        const moreCount = spsValues.length > 5 ? ` (+${spsValues.length - 5} more)` : '';
-        valuesHtml = `<br><span style="color: #2196f3; font-weight: bold;">Latest Values: ${valuesList}${moreCount}</span>`;
+      if (valueEntries.length === 0) {
+        const empty = document.createElement("div");
+        empty.textContent = "No SPS values detected yet. Interact with the page to draw values, then reopen.";
+        list.appendChild(empty);
       }
 
-      // Get the most recent value (by timestamp) for this canvas
-      let lastInterceptHtml = '';
-      if (spsValuesDetailed.length > 0) {
-        const mostRecent = spsValuesDetailed.reduce((prev, current) =>
-          (current.timestamp > prev.timestamp) ? current : prev
-        );
-        const timeAgo = mostRecent.timestamp ? ` (${Math.round((Date.now() - mostRecent.timestamp) / 1000)}s ago)` : '';
-        const labelText = mostRecent.tag ? `${mostRecent.tag} = ${mostRecent.value}` : mostRecent.value;
-        lastInterceptHtml = `<br><span style="color: #ff5722; font-size: 12px;">Last Intercept: ${labelText}${timeAgo}</span>`;
-      } else {
-        lastInterceptHtml = `<br><span style="color: #999; font-size: 12px;">Last Intercept: (none detected yet)</span>`;
-      }
+      valueEntries.forEach(entry => {
+        const canvas = entry.canvas;
+        const rect = canvas.getBoundingClientRect();
+        const region = entry.region;
+        const alreadyWatched = isCanvasWatched(canvas, region);
+        const item = document.createElement("div");
+        item.style.cssText = `
+          padding: 12px; margin: 8px 0; border: 2px solid #ddd;
+          border-radius: 4px; cursor: pointer; background: #f9f9f9;
+          transition: all 0.2s;
+        `;
 
-      item.innerHTML = `
-        <strong>Canvas #${idx}</strong><br>
-        ID: ${id}<br>
-        Size: ${canvas.width}×${canvas.height}px<br>
-        Position: ${Math.round(rect.left)},${Math.round(rect.top)}<br>
-        Z-Index: ${zIndex}<br>
-        Classes: ${classes}${valuesHtml}${lastInterceptHtml}
-      `;
+        const id = canvas.id || `canvas-${entry.canvasIdx}`;
+        const zIndex = window.getComputedStyle(canvas).zIndex;
+        const classes = canvas.className || "(no class)";
+        getCanvasKey(canvas, entry.canvasIdx);
 
-      const nameInput = document.createElement("input");
-      nameInput.type = "text";
-      nameInput.placeholder = "Optional name (Prometheus label)";
-      nameInput.value = getCanvasName(canvas, idx);
-      nameInput.style.cssText = "width: 90%; margin-top: 6px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;";
-      nameInput.oninput = () => {
-        saveCanvasName(canvas, nameInput.value, idx);
-      };
-
-      item.onmouseenter = () => {
-        if (!selectedCanvases.includes(canvas)) {
-          item.style.background = "#e3f2fd";
-          item.style.borderColor = "#2196f3";
+        if (entry.value) {
+          const v = entry.value;
+          const label = v.tag ? `${v.tag} = ${v.value}` : v.value;
+          item.innerHTML = `
+            <strong>Value #${entry.valueIdx} on canvas #${entry.canvasIdx}</strong><br>
+            ${label}<br>
+            Pos: ${v.x},${v.y} • Region: ${region.x},${region.y} ${region.w}x${region.h}<br>
+            Canvas ID: ${id} • Z-Index: ${zIndex}<br>
+            Last seen: ${timeAgo(v.timestamp)}<br>
+            Classes: ${classes}
+          `;
+        } else {
+          item.innerHTML = `
+            <strong>Canvas #${entry.canvasIdx}</strong><br>
+            ID: ${id}<br>
+            Size: ${canvas.width}×${canvas.height}px<br>
+            Position: ${Math.round(rect.left)},${Math.round(rect.top)}<br>
+            Z-Index: ${zIndex}<br>
+            Classes: ${classes}
+          `;
         }
-        canvas.classList.add(HOVER_CLASS);
-      };
 
-      item.onmouseleave = () => {
-        if (!selectedCanvases.includes(canvas)) {
-          item.style.background = "#f9f9f9";
-          item.style.borderColor = "#ddd";
-        }
-        canvas.classList.remove(HOVER_CLASS);
-      };
+        item.onmouseenter = () => {
+          if (!selectedItems.includes(entry)) {
+            item.style.background = "#e3f2fd";
+            item.style.borderColor = "#2196f3";
+          }
+          canvas.classList.add(HOVER_CLASS);
+        };
 
-      item.onclick = () => {
-        const idx = selectedCanvases.indexOf(canvas);
-        if (idx === -1) {
-          selectedCanvases.push(canvas);
+        item.onmouseleave = () => {
+          if (!selectedItems.includes(entry)) {
+            item.style.background = "#f9f9f9";
+            item.style.borderColor = "#ddd";
+          }
+          canvas.classList.remove(HOVER_CLASS);
+        };
+
+        item.onclick = () => {
+          const idx = selectedItems.indexOf(entry);
+          if (idx === -1) {
+            selectedItems.push(entry);
+            item.style.background = "#c8e6c9";
+            item.style.borderColor = "#4caf50";
+            canvas.classList.add(SELECTED_CLASS);
+          } else {
+            selectedItems.splice(idx, 1);
+            item.style.background = "#f9f9f9";
+            item.style.borderColor = "#ddd";
+            if (!isCanvasWatched(canvas)) {
+              canvas.classList.remove(SELECTED_CLASS);
+            }
+          }
+          updateDoneButton();
+        };
+
+        if (alreadyWatched) {
+          selectedItems.push(entry);
           item.style.background = "#c8e6c9";
           item.style.borderColor = "#4caf50";
           canvas.classList.add(SELECTED_CLASS);
-        } else {
-          selectedCanvases.splice(idx, 1);
-          item.style.background = "#f9f9f9";
-          item.style.borderColor = "#ddd";
-          canvas.classList.remove(SELECTED_CLASS);
         }
-        updateDoneButton();
-      };
+        list.appendChild(item);
+      });
+    } else {
+      canvases.forEach((canvas, idx) => {
+        const rect = canvas.getBoundingClientRect();
+        const item = document.createElement("div");
+        const alreadyWatched = isCanvasWatched(canvas, null);
+        item.style.cssText = `
+          padding: 12px; margin: 8px 0; border: 2px solid #ddd;
+          border-radius: 4px; cursor: pointer; background: #f9f9f9;
+          transition: all 0.2s;
+        `;
 
-      item.appendChild(nameInput);
-      if (alreadyWatched) {
-        selectedCanvases.push(canvas);
-        item.style.background = "#c8e6c9";
-        item.style.borderColor = "#4caf50";
-        canvas.classList.add(SELECTED_CLASS);
-      }
-      list.appendChild(item);
-    });
+        const id = canvas.id || `canvas-${idx}`;
+        const zIndex = window.getComputedStyle(canvas).zIndex;
+        const classes = canvas.className || "(no class)";
+        getCanvasKey(canvas, idx);
+
+        const spsValues = getCanvasValues(canvas);
+        const spsValuesDetailed = extractSPSValues(canvas);
+
+        let valuesHtml = '';
+        if (spsValues.length > 0) {
+          const valuesList = spsValues.slice(0, 5).join(', ');
+          const moreCount = spsValues.length > 5 ? ` (+${spsValues.length - 5} more)` : '';
+          valuesHtml = `<br><span style="color: #2196f3; font-weight: bold;">Latest Values: ${valuesList}${moreCount}</span>`;
+        }
+
+        let lastInterceptHtml = '';
+        if (spsValuesDetailed.length > 0) {
+          const mostRecent = spsValuesDetailed.reduce((prev, current) =>
+            (current.timestamp > prev.timestamp) ? current : prev
+          );
+          const timeAgo = mostRecent.timestamp ? ` (${Math.round((Date.now() - mostRecent.timestamp) / 1000)}s ago)` : '';
+          const labelText = mostRecent.tag ? `${mostRecent.tag} = ${mostRecent.value}` : mostRecent.value;
+          lastInterceptHtml = `<br><span style="color: #ff5722; font-size: 12px;">Last Intercept: ${labelText}${timeAgo}</span>`;
+        } else {
+          lastInterceptHtml = `<br><span style="color: #999; font-size: 12px;">Last Intercept: (none detected yet)</span>`;
+        }
+
+        item.innerHTML = `
+          <strong>Canvas #${idx}</strong><br>
+          ID: ${id}<br>
+          Size: ${canvas.width}×${canvas.height}px<br>
+          Position: ${Math.round(rect.left)},${Math.round(rect.top)}<br>
+          Z-Index: ${zIndex}<br>
+          Classes: ${classes}${valuesHtml}${lastInterceptHtml}
+        `;
+
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.placeholder = "Optional name (Prometheus label)";
+        nameInput.value = getCanvasName(canvas, idx);
+        nameInput.style.cssText = "width: 90%; margin-top: 6px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;";
+        nameInput.oninput = () => {
+          saveCanvasName(canvas, nameInput.value, idx);
+        };
+
+        item.onmouseenter = () => {
+          if (!selectedItems.includes(canvas)) {
+            item.style.background = "#e3f2fd";
+            item.style.borderColor = "#2196f3";
+          }
+          canvas.classList.add(HOVER_CLASS);
+        };
+
+        item.onmouseleave = () => {
+          if (!selectedItems.includes(canvas)) {
+            item.style.background = "#f9f9f9";
+            item.style.borderColor = "#ddd";
+          }
+          canvas.classList.remove(HOVER_CLASS);
+        };
+
+        item.onclick = () => {
+          const idxSel = selectedItems.indexOf(canvas);
+          if (idxSel === -1) {
+            selectedItems.push(canvas);
+            item.style.background = "#c8e6c9";
+            item.style.borderColor = "#4caf50";
+            canvas.classList.add(SELECTED_CLASS);
+          } else {
+            selectedItems.splice(idxSel, 1);
+            item.style.background = "#f9f9f9";
+            item.style.borderColor = "#ddd";
+            canvas.classList.remove(SELECTED_CLASS);
+          }
+          updateDoneButton();
+        };
+
+        item.appendChild(nameInput);
+        if (alreadyWatched) {
+          selectedItems.push(canvas);
+          item.style.background = "#c8e6c9";
+          item.style.borderColor = "#4caf50";
+          canvas.classList.add(SELECTED_CLASS);
+        }
+        list.appendChild(item);
+      });
+    }
 
     scrollContainer.appendChild(list);
     panel.appendChild(scrollContainer);
@@ -714,8 +857,8 @@
     `;
     doneBtn.onclick = () => {
       closeModal();
-      if (selectedCanvases.length > 0) {
-        processSelectedCanvases(selectedCanvases);
+      if (selectedItems.length > 0) {
+        processSelectedItems(selectedItems, useValueMode);
       }
     };
 
@@ -734,7 +877,7 @@
     panel.appendChild(footer);
 
     function updateDoneButton() {
-      doneBtn.textContent = `Done (${selectedCanvases.length} selected)`;
+      doneBtn.textContent = `Done (${selectedItems.length} selected)`;
     }
 
     updateDoneButton();
@@ -777,16 +920,28 @@
     document.body.appendChild(modal);
   }
 
-  function processSelectedCanvases(canvases) {
-    if (canvases.length === 0) return;
+  function processSelectedItems(items, useValueMode) {
+    if (items.length === 0) return;
 
-    console.log(`[Canvas Watcher] Processing ${canvases.length} selected canvas(es)`);
+    console.log(`[Canvas Watcher] Processing ${items.length} selection(s)`);
 
-    // Watch entire canvas by default (no region selection confirmation)
-    canvases.forEach(canvas => {
-      console.log(`[Canvas Watcher] Adding watcher for canvas:`, canvas.id);
-      addWatcher(canvas, null);
-    });
+    if (useValueMode) {
+      items.forEach(entry => {
+        const canvas = entry.canvas;
+        if (!canvas) return;
+        if (entry.region) {
+          console.log(`[Canvas Watcher] Adding watcher for value ${entry.label || '(no-label)'} on canvas ${canvas.id || '(no-id)'}`);
+          addWatcher(canvas, entry.region, entry.label || null);
+        } else {
+          addWatcher(canvas, null);
+        }
+      });
+    } else {
+      items.forEach(canvas => {
+        console.log(`[Canvas Watcher] Adding watcher for canvas:`, canvas.id);
+        addWatcher(canvas, null);
+      });
+    }
   }
 
   function selectRegion(canvas) {
@@ -874,14 +1029,14 @@
     document.addEventListener("keydown", onKey, true);
   }
 
-  function addWatcher(canvas, region) {
+  function addWatcher(canvas, region, label) {
     const id = canvas.id || `watched-canvas-${Date.now()}`;
     canvas.id = id;
     const canvasName = getCanvasName(canvas);
 
-    const existing = state.watchers.find(w => w.canvas === canvas);
+    const existing = state.watchers.find(w => (w.canvas === canvas || (w.canvas && canvas && w.canvas.id && w.canvas.id === canvas.id)) && sameRegion(w.region, region || null));
     if (existing) {
-      log("Canvas already being watched:", id);
+      log("Canvas/region already being watched:", id);
       return;
     }
 
@@ -890,6 +1045,7 @@
       canvas,
       canvasName,
       region: region || null,
+      label: label || null,
       lastHash: null,
       interval: null
     };
@@ -988,6 +1144,7 @@
       timestamp: new Date().toISOString()
     };
     if (region) payload.region = region;
+    if (watcher.label) payload.label = watcher.label;
     if (state.sendSnapshot) payload.snapshot = dataUrl;
     if (spsValues.length > 0) payload.spsValues = spsValues;
 
@@ -1124,11 +1281,12 @@
 
     const list = state.watchers.map((w, idx) => {
       const region = w.region ? ` [Region: ${w.region.x},${w.region.y} ${w.region.w}x${w.region.h}]` : " [Full canvas]";
+      const label = w.label ? ` [Label: ${w.label}]` : "";
       const spsValues = extractSPSValues(w.canvas);
       const valuesStr = spsValues.length > 0
         ? '\n   Values: ' + spsValues.map(v => v.tag ? `${v.tag}=${v.value}` : v.value).join(', ')
         : '\n   (no SPS values detected)';
-      return `${idx + 1}. ${w.canvas.id}${region}${valuesStr}`;
+      return `${idx + 1}. ${w.canvas.id}${region}${label}${valuesStr}`;
     }).join("\n\n");
 
     alert(`Watching ${state.watchers.length} canvas(es):\n\n${list}`);
@@ -1157,6 +1315,104 @@
     }
   }
 
+  function getXhrResponse(xhr) {
+    if (!xhr) return null;
+    try {
+      if (pageWindow.q && typeof pageWindow.q.bd === "function" && pageWindow.q.bd()) {
+        return xhr.responseText;
+      }
+    } catch (e) {}
+    try {
+      if (pageWindow.r && typeof pageWindow.r.lj === "function" && pageWindow.r.lj()) {
+        return xhr.responseText;
+      }
+    } catch (e) {}
+    if ("response" in xhr) return xhr.response;
+    return null;
+  }
+
+  function processRawPayload(raw, sourceLabel) {
+    if (raw === null || raw === undefined || raw === "") return;
+
+    proxyState.lastIM = raw;
+    pageWindow.dispatchEvent(new pageWindow.CustomEvent("wv:IM-raw", { detail: { raw, source: sourceLabel } }));
+
+    if (!(raw instanceof ArrayBuffer) || raw.byteLength === 0) return;
+
+    // Parse binary data to extract SPS values
+    const b = new Uint8Array(raw);
+
+    // Extract strings from binary data (printable ASCII chars)
+    var strings = [];
+    var currentString = "";
+    for (var k = 0; k < b.length; k++) {
+      if (b[k] >= 32 && b[k] <= 126) {
+        currentString += String.fromCharCode(b[k]);
+      } else {
+        if (currentString.length >= 4) {
+          strings.push(currentString);
+        }
+        currentString = "";
+      }
+    }
+    if (currentString.length >= 4) strings.push(currentString);
+
+    // Categorize strings
+    var numericStrings = [];
+    var variableTags = [];
+    for (var s = 0; s < strings.length; s++) {
+      var str = strings[s];
+      if (/^-?\d+\.?\d*$/.test(str) || /^-?\d*\.\d+$/.test(str)) {
+        numericStrings.push(str);
+      } else if (/^[A-Z]{2,3}\d{3,4}$/.test(str)) {
+        variableTags.push(str);
+      }
+    }
+
+    // Extract tag-value pairs (tag followed by numeric value)
+    var tagValuePairs = [];
+    for (var t = 0; t < strings.length - 1; t++) {
+      var currentStr = strings[t];
+      var nextStr = strings[t + 1];
+      if (/^[A-Z]{2,3}\d{3,4}$/.test(currentStr)) {
+        if (/^-?\d+\.?\d*$/.test(nextStr) || /^-?\d*\.\d+$/.test(nextStr)) {
+          tagValuePairs.push({
+            tag: currentStr,
+            value: nextStr
+          });
+        }
+      }
+    }
+
+    // Feed extracted data to spsValueTracker
+    if (pageWindow.spsValueTracker) {
+      if (tagValuePairs.length > 0) {
+        pageWindow.spsValueTracker.updateTagValuePairs(tagValuePairs);
+        log("Updated spsValueTracker with", tagValuePairs.length, "tag-value pairs");
+      }
+      if (numericStrings.length > 0) {
+        pageWindow.spsValueTracker.updateReceivedValues(numericStrings);
+        log("Updated spsValueTracker with", numericStrings.length, "numeric values");
+      }
+    }
+
+    const payload = {
+      kind: "IM",
+      source: sourceLabel,
+      rawType: "ArrayBuffer",
+      rawBase64: encodeArrayBuffer(raw),
+      byteLength: raw.byteLength,
+      timestamp: Date.now(),
+      parsedData: {
+        tagValuePairs: tagValuePairs,
+        numericStrings: numericStrings,
+        variableTags: variableTags
+      }
+    };
+    sendEvent(payload);
+    log("IM captured ArrayBuffer:", raw.byteLength, "bytes,", tagValuePairs.length, "tags,", numericStrings.length, "values");
+  }
+
   function extractStrings(buf) {
     if (!(buf instanceof ArrayBuffer)) return { strings: [], pairs: [] };
     const b = new Uint8Array(buf);
@@ -1182,182 +1438,121 @@
 
   function installProxies() {
     if (proxyState.proxiesInstalled) return;
-    if (!pageWindow.Vb || !pageWindow.Vb.prototype || !pageWindow.Xa || !pageWindow.Xa.prototype) return;
+    let patched = false;
 
     try {
-      const originalIM = pageWindow.Vb.prototype.IM;
-      if (typeof originalIM === "function" && !pageWindow.Vb.prototype._wvPatchedIM) {
-        pageWindow.Vb.prototype.IM = function() {
-          try {
-            // Check if XMLHttpRequest has completed and has data
-            if (this.Ha && this.Ha.readyState === 4 && this.Ha.status === 200) {
-              const raw = (pageWindow.r && pageWindow.r.lj && pageWindow.r.lj()) ? this.Ha.responseText : this.Ha.response;
-
-              // Only process non-null responses
-              if (raw !== null && raw !== undefined && raw !== "") {
-                proxyState.lastIM = raw;
-                pageWindow.dispatchEvent(new pageWindow.CustomEvent("wv:IM-raw", { detail: { raw } }));
-
-                // Forward to backend for correlation (only if it's ArrayBuffer or substantial data)
-                if (raw instanceof ArrayBuffer && raw.byteLength > 0) {
-                  // Parse binary data to extract SPS values
-                  const b = new Uint8Array(raw);
-
-                  // Extract strings from binary data (printable ASCII chars)
-                  var strings = [];
-                  var currentString = "";
-                  for (var k = 0; k < b.length; k++) {
-                    if (b[k] >= 32 && b[k] <= 126) {
-                      currentString += String.fromCharCode(b[k]);
-                    } else {
-                      if (currentString.length >= 4) {
-                        strings.push(currentString);
-                      }
-                      currentString = "";
-                    }
-                  }
-                  if (currentString.length >= 4) strings.push(currentString);
-
-                  // Categorize strings
-                  var numericStrings = [];
-                  var variableTags = [];
-                  for (var s = 0; s < strings.length; s++) {
-                    var str = strings[s];
-                    if (/^-?\d+\.?\d*$/.test(str) || /^-?\d*\.\d+$/.test(str)) {
-                      numericStrings.push(str);
-                    } else if (/^[A-Z]{2,3}\d{3,4}$/.test(str)) {
-                      variableTags.push(str);
-                    }
-                  }
-
-                  // Extract tag-value pairs (tag followed by numeric value)
-                  var tagValuePairs = [];
-                  for (var t = 0; t < strings.length - 1; t++) {
-                    var currentStr = strings[t];
-                    var nextStr = strings[t + 1];
-                    if (/^[A-Z]{2,3}\d{3,4}$/.test(currentStr)) {
-                      if (/^-?\d+\.?\d*$/.test(nextStr) || /^-?\d*\.\d+$/.test(nextStr)) {
-                        tagValuePairs.push({
-                          tag: currentStr,
-                          value: nextStr
-                        });
-                      }
-                    }
-                  }
-
-                  // Feed extracted data to spsValueTracker
-                  if (pageWindow.spsValueTracker) {
-                    if (tagValuePairs.length > 0) {
-                      pageWindow.spsValueTracker.updateTagValuePairs(tagValuePairs);
-                      log("Updated spsValueTracker with", tagValuePairs.length, "tag-value pairs");
-                    }
-                    if (numericStrings.length > 0) {
-                      pageWindow.spsValueTracker.updateReceivedValues(numericStrings);
-                      log("Updated spsValueTracker with", numericStrings.length, "numeric values");
-                    }
-                  }
-
-                  const payload = {
-                    kind: "IM",
-                    rawType: "ArrayBuffer",
-                    rawBase64: encodeArrayBuffer(raw),
-                    byteLength: raw.byteLength,
-                    timestamp: Date.now(),
-                    parsedData: {
-                      tagValuePairs: tagValuePairs,
-                      numericStrings: numericStrings,
-                      variableTags: variableTags
-                    }
-                  };
-                  sendEvent(payload);
-                  log("IM captured ArrayBuffer:", raw.byteLength, "bytes,", tagValuePairs.length, "tags,", numericStrings.length, "values");
-                }
-              }
-            }
-          } catch (err) {
-            warn("IM proxy dispatch error", err);
-          }
-          return originalIM.apply(this, arguments);
-        };
-        pageWindow.Vb.prototype._wvPatchedIM = true;
-        log("IM proxy installed");
-      }
-
-      const originalJc = pageWindow.Xa.prototype.Jc;
-      if (typeof originalJc === "function" && !pageWindow.Xa.prototype._wvPatchedJc) {
-        pageWindow.Xa.prototype.Jc = function(a, b) {
-          try {
-            const messageType = b && typeof b.type === "function" ? b.type() : null;
-            const serialized = safeSerialize(b);
-            pageWindow.dispatchEvent(new pageWindow.CustomEvent("wv:Jc-call", { detail: { target: a, message: b, messageType, lastIM: proxyState.lastIM } }));
-            // Forward to backend for correlation
-            const payload = {
-              kind: "JC",
-              messageType,
-              message: serialized,
-              lastIMType: proxyState.lastIM instanceof ArrayBuffer ? "ArrayBuffer" : typeof proxyState.lastIM,
-              lastIMBase64: proxyState.lastIM instanceof ArrayBuffer ? encodeArrayBuffer(proxyState.lastIM) : null,
-              canvasIds: Array.from(document.querySelectorAll("canvas")).map(c => c.id || "(no-id)"),
-              timestamp: Date.now()
-            };
-            sendEvent(payload);
-          } catch (err) {
-            warn("Jc proxy dispatch error", err);
-          }
-          return originalJc.apply(this, arguments);
-        };
-        pageWindow.Xa.prototype._wvPatchedJc = true;
-        log("Jc proxy installed");
-      }
-
-      // Wrap ac.Pb() to intercept the parsed response forwarding
-      // This captures the processed data that IM sends to the higher-level state object
-      if (pageWindow.Xa && pageWindow.Xa.prototype && pageWindow.Xa.prototype.Pb) {
-        const originalPb = pageWindow.Xa.prototype.Pb;
-        if (typeof originalPb === "function" && !pageWindow.Xa.prototype._wvPatchedPb) {
-          pageWindow.Xa.prototype.Pb = function(parsedData) {
+      if (pageWindow.Vb && pageWindow.Vb.prototype) {
+        const originalIM = pageWindow.Vb.prototype.IM;
+        if (typeof originalIM === "function" && !pageWindow.Vb.prototype._wvPatchedIM) {
+          pageWindow.Vb.prototype.IM = function() {
             try {
-              // Store the parsed response data
-              proxyState.lastParsed = parsedData;
-
-              // Log the parsed data to console
-              console.log('[Xa.Pb] Parsed data received:', {
-                dataType: parsedData ? parsedData.constructor.name : 'null',
-                data: parsedData,
-                timestamp: Date.now()
-              });
-
-              // Dispatch event for debugging/monitoring
-              pageWindow.dispatchEvent(new pageWindow.CustomEvent("wv:Pb-call", {
-                detail: {
-                  parsedData: parsedData,
-                  dataType: parsedData ? parsedData.constructor.name : 'null',
-                  timestamp: Date.now()
-                }
-              }));
-
-              // Try to serialize and send to backend
-              const serialized = safeSerialize(parsedData);
-              if (serialized) {
-                const payload = {
-                  kind: "PB",
-                  parsedData: serialized,
-                  dataType: parsedData ? parsedData.constructor.name : 'null',
-                  timestamp: Date.now()
-                };
-                sendEvent(payload);
+              if (this.Ha && this.Ha.readyState === 4 && this.Ha.status === 200) {
+                const raw = getXhrResponse(this.Ha);
+                processRawPayload(raw, "Vb.IM");
               }
             } catch (err) {
-              console.warn('[Xa.Pb] Error processing parsed data:', err);
+              warn("IM proxy dispatch error", err);
             }
-            return originalPb.apply(this, arguments);
+            return originalIM.apply(this, arguments);
           };
-          pageWindow.Xa.prototype._wvPatchedPb = true;
-          console.log('[Xa.Pb] Proxy installed successfully');
+          pageWindow.Vb.prototype._wvPatchedIM = true;
+          patched = true;
+          log("IM proxy installed");
         }
       }
 
-      proxyState.proxiesInstalled = true;
+      // Older eCockpit stack uses Db/Tz instead of Vb/IM
+      if (pageWindow.Db && pageWindow.Db.prototype) {
+        const originalTz = pageWindow.Db.prototype.Tz;
+        if (typeof originalTz === "function" && !pageWindow.Db.prototype._wvPatchedTz) {
+          pageWindow.Db.prototype.Tz = function() {
+            try {
+              if (this.oa && this.oa.readyState === 4 && (this.oa.status === 200 || this.oa.status === "OK")) {
+                const raw = getXhrResponse(this.oa);
+                processRawPayload(raw, "Db.Tz");
+              }
+            } catch (err) {
+              warn("Tz proxy dispatch error", err);
+            }
+            return originalTz.apply(this, arguments);
+          };
+          pageWindow.Db.prototype._wvPatchedTz = true;
+          patched = true;
+          log("Tz proxy installed");
+        }
+      }
+
+      if (pageWindow.Xa && pageWindow.Xa.prototype) {
+        const originalJc = pageWindow.Xa.prototype.Jc;
+        if (typeof originalJc === "function" && !pageWindow.Xa.prototype._wvPatchedJc) {
+          pageWindow.Xa.prototype.Jc = function(a, b) {
+            try {
+              const messageType = b && typeof b.type === "function" ? b.type() : null;
+              const serialized = safeSerialize(b);
+              pageWindow.dispatchEvent(new pageWindow.CustomEvent("wv:Jc-call", { detail: { target: a, message: b, messageType, lastIM: proxyState.lastIM } }));
+              const payload = {
+                kind: "JC",
+                messageType,
+                message: serialized,
+                lastIMType: proxyState.lastIM instanceof ArrayBuffer ? "ArrayBuffer" : typeof proxyState.lastIM,
+                lastIMBase64: proxyState.lastIM instanceof ArrayBuffer ? encodeArrayBuffer(proxyState.lastIM) : null,
+                canvasIds: Array.from(document.querySelectorAll("canvas")).map(c => c.id || "(no-id)"),
+                timestamp: Date.now()
+              };
+              sendEvent(payload);
+            } catch (err) {
+              warn("Jc proxy dispatch error", err);
+            }
+            return originalJc.apply(this, arguments);
+          };
+          pageWindow.Xa.prototype._wvPatchedJc = true;
+          patched = true;
+          log("Jc proxy installed");
+        }
+
+        if (pageWindow.Xa.prototype.Pb) {
+          const originalPb = pageWindow.Xa.prototype.Pb;
+          if (typeof originalPb === "function" && !pageWindow.Xa.prototype._wvPatchedPb) {
+            pageWindow.Xa.prototype.Pb = function(parsedData) {
+              try {
+                proxyState.lastParsed = parsedData;
+                console.log('[Xa.Pb] Parsed data received:', {
+                  dataType: parsedData ? parsedData.constructor.name : 'null',
+                  data: parsedData,
+                  timestamp: Date.now()
+                });
+                pageWindow.dispatchEvent(new pageWindow.CustomEvent("wv:Pb-call", {
+                  detail: {
+                    parsedData: parsedData,
+                    dataType: parsedData ? parsedData.constructor.name : 'null',
+                    timestamp: Date.now()
+                  }
+                }));
+                const serialized = safeSerialize(parsedData);
+                if (serialized) {
+                  const payload = {
+                    kind: "PB",
+                    parsedData: serialized,
+                    dataType: parsedData ? parsedData.constructor.name : 'null',
+                    timestamp: Date.now()
+                  };
+                  sendEvent(payload);
+                }
+              } catch (err) {
+                console.warn('[Xa.Pb] Error processing parsed data:', err);
+              }
+              return originalPb.apply(this, arguments);
+            };
+            pageWindow.Xa.prototype._wvPatchedPb = true;
+            patched = true;
+            console.log('[Xa.Pb] Proxy installed successfully');
+          }
+        }
+      }
+
+      if (patched) {
+        proxyState.proxiesInstalled = true;
+      }
     } catch (err) {
       warn("Failed to install proxies", err);
     }
