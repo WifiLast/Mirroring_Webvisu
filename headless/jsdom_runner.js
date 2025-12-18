@@ -918,7 +918,37 @@ function wantsCanvasRendering(payload = {}) {
   return Array.isArray(payload.canvasSnapshots) && payload.canvasSnapshots.length > 0;
 }
 
-function injectCanvasValueWatcher(window) {
+function loadCanvasNameMap() {
+  const map = {};
+  try {
+    const storePath = path.join(__dirname, "metrics_store.json");
+    if (!fs.existsSync(storePath)) {
+      return map;
+    }
+    const raw = fs.readFileSync(storePath, "utf8");
+    const store = JSON.parse(raw);
+    Object.values(store || {}).forEach((entry) => {
+      const canvases = entry && entry.canvases;
+      if (canvases && typeof canvases === "object") {
+        Object.values(canvases).forEach((canvasEntry) => {
+          if (
+            canvasEntry &&
+            typeof canvasEntry === "object" &&
+            canvasEntry.canvasId &&
+            canvasEntry.canvasName
+          ) {
+            map[String(canvasEntry.canvasId)] = String(canvasEntry.canvasName);
+          }
+        });
+      }
+    });
+  } catch (err) {
+    // Ignore mapping errors; fall back to canvasId
+  }
+  return map;
+}
+
+function injectCanvasValueWatcher(window, canvasNameMap = {}) {
   if (!window || !window.CanvasRenderingContext2D || !window.CanvasRenderingContext2D.prototype) {
     return { installed: false, reason: "CanvasRenderingContext2D not available" };
   }
@@ -953,6 +983,7 @@ function injectCanvasValueWatcher(window) {
       return;
     }
     const canvasId = getCanvasId(canvas);
+    const canvasName = canvasNameMap[canvasId] || canvasId;
     const value = text === undefined || text === null ? "" : String(text).trim();
     // Skip empty strings to reduce noise
     if (!value) {
@@ -969,6 +1000,8 @@ function injectCanvasValueWatcher(window) {
         value,
         previous,
         type,
+        canvasId,
+        canvasName,
       });
 
       // Update Prometheus Metric (if available)
@@ -976,8 +1009,8 @@ function injectCanvasValueWatcher(window) {
         const valNum = parseFloat(String(value).replace(",", "."));
         if (!isNaN(valNum) && typeof getGauge === "function" && typeof buildMetricName === "function") {
           // Use 'value' as default tag to match previous behavior
-          const mName = buildMetricName(canvasId, "value");
-          getGauge(mName, `${canvasId} value`).set(valNum);
+          const mName = buildMetricName(canvasName, "value");
+          getGauge(mName, `${canvasName} value`).set(valNum);
         }
       } catch (err) {
         // ignore update errors
@@ -1547,7 +1580,8 @@ async function renderPagePayload(payload = {}, index = 0) {
 
   // Install canvas value watcher after scripts have a chance to set up contexts
   if (dom.window.__deferredCanvasWatcher) {
-    const watcherStatus = injectCanvasValueWatcher(dom.window);
+    const canvasNameMap = loadCanvasNameMap();
+    const watcherStatus = injectCanvasValueWatcher(dom.window, canvasNameMap);
     if (watcherStatus.installed) {
       dom.window.console.log("[canvas-watcher] Canvas value watcher installed successfully");
     } else {
