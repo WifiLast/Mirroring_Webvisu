@@ -1,4 +1,14 @@
-/Codesys
-/eCockpit
+
 /headless/node_modules
 /.claude
+headless/https_output_pfc100.txt
+headless/pf100_wireshark.csv
+headless/pfc100_request.txt
+headless/pfc100_wireshark.pcapng
+headless/pfc100_wireshark.txt
+headless/response.txt
+headless/test_output.log
+headless/console_log.txt
+headless/binary_request_pfc100.txt
+/headless/__pycache__
+headless/console_log.txt

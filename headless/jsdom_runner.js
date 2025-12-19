@@ -17,7 +17,7 @@
  */
 "use strict";
 
-const { JSDOM, VirtualConsole } = require("jsdom");
+const { JSDOM, VirtualConsole, ResourceLoader } = require("jsdom");
 const fetch = require("node-fetch");
 const got = require("got");
 const { CookieJar } = require("tough-cookie");
@@ -52,6 +52,50 @@ const promClient = require("prom-client");
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
+
+// Only allow canvas value-change logs to surface
+const isCanvasValueChangeLog = (args) => {
+  if (!args || !args.length) return false;
+  return args.some((val) => typeof val === "string" && val.includes("[canvas-watcher] value changed"));
+};
+const canvasLogFile = path.join(__dirname, "console_log.txt");
+const appendCanvasLog = (args) => {
+  try {
+    const line = args.map((v) => (typeof v === "string" ? v : JSON.stringify(v))).join(" ");
+    fs.appendFileSync(canvasLogFile, line + "\n");
+  } catch (_) {
+    // ignore logging failures
+  }
+};
+
+["log", "info", "warn", "error", "debug"].forEach((method) => {
+  const original = console[method] ? console[method].bind(console) : null;
+  if (!original) return;
+  console[method] = (...args) => {
+    if (isCanvasValueChangeLog(args)) {
+      original(...args);
+      appendCanvasLog(args);
+    }
+  };
+});
+
+// Surface unexpected process-level failures
+process.on("unhandledRejection", (reason) => {
+  try {
+    const msg = reason && reason.stack ? reason.stack : String(reason);
+    // console.error("[jsdom-runner] UnhandledPromiseRejection:", msg);
+  } catch (_) {
+    // ignore logging failures
+  }
+});
+process.on("uncaughtException", (err) => {
+  try {
+    const msg = err && err.stack ? err.stack : String(err);
+    // console.error("[jsdom-runner] UncaughtException:", msg);
+  } catch (_) {
+    // ignore logging failures
+  }
+});
 
 const PROM_PORT = 8077;
 const STORE_PATH = path.join(__dirname, "metrics_store.json");
@@ -102,10 +146,10 @@ try {
         });
       }
     });
-    console.warn(`[prometheus] Initialized metrics from ${STORE_PATH}`);
+    // console.warn(`[prometheus] Initialized metrics from ${STORE_PATH}`);
   }
 } catch (err) {
-  console.warn(`[prometheus] Failed to load metrics store: ${err.message}`);
+  // console.warn(`[prometheus] Failed to load metrics store: ${err.message}`);
 }
 
 // Start Prometheus Metrics Server
@@ -125,11 +169,11 @@ const metricsServer = http.createServer(async (req, res) => {
 });
 
 metricsServer.on("error", (err) => {
-  console.warn(`[prometheus] Server error: ${err.message}`);
+  // console.warn(`[prometheus] Server error: ${err.message}`);
 });
 
 metricsServer.listen(PROM_PORT, () => {
-  console.warn(`[prometheus] Server listening on port ${PROM_PORT}`);
+  // console.warn(`[prometheus] Server listening on port ${PROM_PORT}`);
 });
 
 
@@ -215,7 +259,7 @@ async function loadHtml({ url, html, headers, cookieJar }) {
     minVersion: 'TLSv1.2',
     maxVersion: 'TLSv1.3',
     ecdhCurve: 'X25519:prime256v1:secp384r1',  // Chrome's ECDH curves
-    rejectUnauthorized: true,
+    rejectUnauthorized: false, // allow self-signed
   });
 
   const jar = cookieJar || new CookieJar();
@@ -232,9 +276,8 @@ async function loadHtml({ url, html, headers, cookieJar }) {
       retry: {
         limit: 0,  // No retries
       },
-      agent: {
-        https: httpsAgent,  // Use custom agent with Chrome-like TLS
-      },
+      agent: { https: httpsAgent },
+      https: { rejectUnauthorized: false }, // allow self-signed certificates
       cookieJar: jar,  // Reuse jar so subsequent requests share cookies
     });
 
@@ -277,7 +320,7 @@ function executeSnippets(dom, snippets = []) {
     try {
       window.eval(code);
     } catch (err) {
-      console.warn(`Failed to execute snippet[${index}]: ${err.message}`);
+      // console.warn(`Failed to execute snippet[${index}]: ${err.message}`);
     }
   });
 }
@@ -552,6 +595,7 @@ function instrumentXHR(dom, logEntries, nextId) {
           'Origin': `${parsedUrl.protocol}//${parsedUrl.host}`,
           'User-Agent': defaultHeaders['User-Agent'],
         },
+        rejectUnauthorized: false,
       };
 
       const req = protocol.request(options, (res) => {
@@ -641,8 +685,8 @@ function instrumentXHR(dom, logEntries, nextId) {
     open(method, url, async = true, user, password) {
       this._logEntry.method = method || "GET";
       let targetUrl = url;
-      const isWebVisuBinary = url && url.includes("WebVisuV3");
-      // Normalize binary endpoint: allow override via payload.webVisuBinaryPath
+      const isWebVisuBinary = url && url.toLowerCase().includes("webvisuv3");
+      // Allow explicit override via payload.webVisuBinaryPath; otherwise preserve URL.
       if (isWebVisuBinary) {
         const override =
           (dom.window.__payloadWebVisuBinaryPath &&
@@ -650,13 +694,9 @@ function instrumentXHR(dom, logEntries, nextId) {
           null;
         if (override) {
           targetUrl = override;
-        } else if (!url.includes("WebVisuV3_")) {
-          // Best-effort fallback: add device-specific suffix if missing
-          //targetUrl = url.replace("WebVisuV3.bin", "WebVisuV3_RLT_010113.bin");
-        }
-        // Ensure it stays under /webvisu/
-        if (targetUrl.startsWith("WebVisuV3")) {
-          targetUrl = `/webvisu/${targetUrl}`;
+        } else if (targetUrl && targetUrl.toLowerCase().startsWith("webvisuv3")) {
+          // Fallback: if relative and missing /webvisu/, try the root-level path used by older runtimes.
+          targetUrl = `/WebVisuV3.bin`;
         }
       }
       this._logEntry.url = targetUrl;
@@ -669,6 +709,12 @@ function instrumentXHR(dom, logEntries, nextId) {
       } else {
         super.open(method, targetUrl, async, user, password);
       }
+    }
+
+    setRequestHeader(header, value) {
+      if (!this._requestHeaders) this._requestHeaders = {};
+      this._requestHeaders[header.toLowerCase()] = value;
+      super.setRequestHeader(header, value);
     }
 
     send(body) {
@@ -703,17 +749,9 @@ function instrumentXHR(dom, logEntries, nextId) {
         // Debug logging for WebVisu binary exchanges
         if (isWebVisuBinary) {
           try {
-            const hexDump = bodyBuffer
-              ? bodyBuffer.subarray(0, 256).toString("hex")
-              : Buffer.from(String(bodyString || ""), "utf8").toString("hex");
+            const humanPayload = bodyBuffer ? bodyBuffer.toString("utf8") : String(bodyString || "");
             process.stderr.write(
-              JSON.stringify({
-                type: "debug",
-                topic: "webvisu-send",
-                url: this._logEntry.url,
-                length: bodyBuffer ? bodyBuffer.length : (bodyString ? bodyString.length : 0),
-                hex: hexDump,
-              }) + "\n"
+              `[webvisu-send] url=${this._logEntry.url} length=${bodyBuffer ? bodyBuffer.length : (bodyString ? bodyString.length : 0)} payload="${humanPayload.replace(/\\s+/g, " ").trim()}"\n`
             );
           } catch (err) {
             // ignore logging errors
@@ -727,7 +765,21 @@ function instrumentXHR(dom, logEntries, nextId) {
             ? this._logEntry.url
             : new URL(this._logEntry.url, dom.window.location.href).href;
 
-          makeNativeBinaryRequest(fullUrl, bodyBuffer || bodyString)
+          // Mirror browser headers for PLC compatibility
+          const defaultHeaders = {
+            "content-type": "application/octet-stream",
+            "accept": "*/*",
+            "accept-encoding": "gzip, deflate",
+            "cache-control": "no-cache",
+            "pragma": "no-cache",
+            "connection": "keep-alive",
+            "dnt": "1",
+            "origin": dom.window.location.origin,
+            "referer": dom.window.location.href,
+          };
+          const mergedHeaders = { ...defaultHeaders, ...(this._requestHeaders || {}) };
+
+          makeNativeBinaryRequest(fullUrl, bodyBuffer || bodyString, mergedHeaders)
             .then((result) => {
               this._nativeRequestPending = false;
 
@@ -763,6 +815,58 @@ function instrumentXHR(dom, logEntries, nextId) {
                   hex: result.data.subarray(0, 256).toString("hex"),
                 }) + "\n"
               );
+              // Extract SPS values (legacy e!Cockpit) from binary payload
+              try {
+                const parsed = parseWebVisuBinary(result.data);
+                if (parsed && (parsed.tagValuePairs.length || parsed.numericStrings.length)) {
+                  // Human-readable summary for quick inspection
+                  const humanPairs = parsed.tagValuePairs
+                    .slice(0, 20)
+                    .map(({ tag, value }) => `${tag}=${value}`)
+                    .join(", ");
+                  if (humanPairs) {
+                    process.stderr.write(
+                      `[webvisu-parse] ${humanPairs}${parsed.tagValuePairs.length > 20 ? " ..." : ""}\n`
+                    );
+                  } else if (parsed.numericStrings.length) {
+                    process.stderr.write(
+                      `[webvisu-parse] values: ${parsed.numericStrings.slice(0, 20).join(", ")}${parsed.numericStrings.length > 20 ? " ..." : ""}\n`
+                    );
+                  }
+
+                  process.stderr.write(
+                    JSON.stringify({
+                      type: "debug",
+                      topic: "webvisu-parse",
+                      url: fullUrl,
+                      tagValuePairs: parsed.tagValuePairs.slice(0, 50),
+                      numericCount: parsed.numericStrings.length,
+                      tagsCount: parsed.variableTags.length,
+                    }) + "\n"
+                  );
+                  if (dom.window && dom.window.spsValueTracker) {
+                    try {
+                      if (parsed.tagValuePairs.length) {
+                        dom.window.spsValueTracker.updateTagValuePairs(parsed.tagValuePairs);
+                      }
+                      if (parsed.numericStrings.length) {
+                        dom.window.spsValueTracker.updateReceivedValues(parsed.numericStrings);
+                      }
+                    } catch (_) {
+                      // ignore tracker errors
+                    }
+                  }
+                }
+              } catch (parseErr) {
+                process.stderr.write(
+                  JSON.stringify({
+                    type: "debug",
+                    topic: "webvisu-parse-error",
+                    url: fullUrl,
+                    error: parseErr && parseErr.message ? parseErr.message : String(parseErr),
+                  }) + "\n"
+                );
+              }
 
               // Trigger XHR state changes and events in proper order
               // readyState 2 = HEADERS_RECEIVED
@@ -778,8 +882,20 @@ function instrumentXHR(dom, logEntries, nextId) {
               this.dispatchEvent(new dom.window.Event('readystatechange'));
 
               // Trigger load events
-              this.dispatchEvent(new dom.window.Event('load'));
-              this.dispatchEvent(new dom.window.Event('loadend'));
+              try {
+                this.dispatchEvent(new dom.window.Event('load'));
+                this.dispatchEvent(new dom.window.Event('loadend'));
+              } catch (loadErr) {
+                process.stderr.write(
+                  JSON.stringify({
+                    type: "debug",
+                    topic: "webvisu-load-error",
+                    url: fullUrl,
+                    error: loadErr.message,
+                    stack: loadErr.stack,
+                  }) + "\n"
+                );
+              }
             })
             .catch((err) => {
               this._nativeRequestPending = false;
@@ -799,6 +915,14 @@ function instrumentXHR(dom, logEntries, nextId) {
                   error: err.message,
                 }) + "\n"
               );
+
+              // Set readyState to 4 (DONE) and status to 0 (Network Error)
+              Object.defineProperty(this, 'readyState', { value: 4, writable: false, configurable: true });
+              Object.defineProperty(this, 'status', { value: 0, writable: false, configurable: true });
+              Object.defineProperty(this, 'statusText', { value: '', writable: false, configurable: true });
+
+              // Trigger final readystatechange
+              this.dispatchEvent(new dom.window.Event('readystatechange'));
 
               // Trigger error event
               this.dispatchEvent(new dom.window.Event('error'));
@@ -827,6 +951,49 @@ function instrumentNetwork(dom) {
   instrumentFetch(dom, entries, nextId);
   instrumentXHR(dom, entries, nextId);
   return entries;
+}
+
+function parseWebVisuBinary(buffer) {
+  if (!buffer || !buffer.byteLength) return null;
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let cur = "";
+  const strings = [];
+  for (let i = 0; i < bytes.length; i++) {
+    const ch = bytes[i];
+    if (ch >= 32 && ch <= 126) {
+      cur += String.fromCharCode(ch);
+    } else {
+      if (cur.length >= 3) strings.push(cur);
+      cur = "";
+    }
+  }
+  if (cur.length >= 3) strings.push(cur);
+
+  const numericStrings = [];
+  const variableTags = [];
+  for (const str of strings) {
+    if (/^-?\d+\.?\d*$/.test(str) || /^-?\d*\.\d+$/.test(str)) {
+      numericStrings.push(str);
+    } else if (/^[A-Z]{2,3}\d{3,4}$/.test(str)) {
+      variableTags.push(str);
+    }
+  }
+
+  const tagValuePairs = [];
+  for (let i = 0; i < strings.length - 1; i++) {
+    const tag = strings[i];
+    const val = strings[i + 1];
+    if (/^[A-Z]{2,3}\d{3,4}$/.test(tag) && (/^-?\d+\.?\d*$/.test(val) || /^-?\d*\.\d+$/.test(val))) {
+      tagValuePairs.push({ tag, value: val });
+    }
+  }
+
+  return {
+    strings,
+    numericStrings,
+    variableTags,
+    tagValuePairs,
+  };
 }
 
 function serialiseConsoleArg(value) {
@@ -861,6 +1028,9 @@ function createVirtualConsole(consoleLogs, liveOutput = false) {
   let entryId = 0;
 
   const pushEntry = (entry) => {
+    if (!isCanvasValueChangeLog(entry.arguments)) {
+      return;
+    }
     consoleLogs.push(Object.freeze(entry));
     if (consoleLogs.length > MAX_CONSOLE_LOGS) {
       consoleLogs.shift();
@@ -948,6 +1118,143 @@ function loadCanvasNameMap() {
   return map;
 }
 
+// Legacy e!Cockpit WebVisu: inject value tracker similar to browser_version/script.js
+function injectLegacyValueTracker(window) {
+  if (window.spsValueTracker) {
+    return;
+  }
+  const trackerScript = `
+(function() {
+  if (window.spsValueTracker) return;
+  window.spsValueTracker = {
+    lastReceivedValues: [],
+    tagValuePairs: [],
+    valueToTagMap: new Map(),
+    canvasTextDraws: [],
+    valueToCanvasMap: new Map(),
+    tagToCanvasMap: new Map(),
+    startTracking: function() {
+      var tracker = this;
+      var originalFillText = CanvasRenderingContext2D.prototype.fillText;
+      var originalStrokeText = CanvasRenderingContext2D.prototype.strokeText;
+
+      CanvasRenderingContext2D.prototype.fillText = function(text, x, y) {
+        tracker.recordCanvasDraw(this.canvas, text, x, y, 'fill');
+        return originalFillText.apply(this, arguments);
+      };
+
+      CanvasRenderingContext2D.prototype.strokeText = function(text, x, y) {
+        tracker.recordCanvasDraw(this.canvas, text, x, y, 'stroke');
+        return originalStrokeText.apply(this, arguments);
+      };
+
+      // console.log('[spsValueTracker] Canvas value tracking started');
+    },
+    recordCanvasDraw: function(canvas, text, x, y, type) {
+      var timestamp = Date.now();
+      var canvasId = canvas && canvas.id ? canvas.id : 'canvas-' + this.getCanvasIndex(canvas);
+      var textStr = String(text).trim();
+      var draw = {
+        canvasId: canvasId,
+        text: textStr,
+        x: Math.round(x),
+        y: Math.round(y),
+        type: type,
+        timestamp: timestamp
+      };
+      this.canvasTextDraws.push(draw);
+
+      var isLabel = /^[A-Z]{2,3}\\d{3,4}$/.test(textStr) || /^[A-Z]+\\d+\\s*-\\s*.+/.test(textStr);
+      var numericMatch = textStr.match(/^(-?\\d+\\.?\\d*|-?\\d*\\.\\d+)\\s*(%|h|Pa|°C|°F|bar|mbar|kPa|MPa|Hz|kW|MW|V|A|mA)?$/);
+      var isNumeric = numericMatch !== null;
+      var cleanValue = isNumeric ? numericMatch[1] : null;
+
+      if (isNumeric && cleanValue && this.lastReceivedValues.indexOf(cleanValue) !== -1) {
+        var key = canvasId + ':' + draw.x + ':' + draw.y;
+        var nearbyLabel = this.findNearbyLabel(canvasId, draw.x, draw.y, timestamp);
+        this.valueToCanvasMap.set(key, {
+          value: textStr,
+          label: nearbyLabel,
+          timestamp: timestamp
+        });
+        if (nearbyLabel) {
+          this.tagToCanvasMap.set(nearbyLabel, key);
+          // console.log('[spsValueTracker] Value mapped:', nearbyLabel, '=', textStr, 'at', key);
+        }
+      }
+
+      if (this.canvasTextDraws.length > 200) {
+        this.canvasTextDraws.shift();
+      }
+    },
+    findNearbyLabel: function(canvasId, x, y, timestamp) {
+      var maxHorizontalDist = 150;
+      var maxVerticalDist = 50;
+      var maxTimeDiff = 2000;
+      var candidates = [];
+
+      for (var i = this.canvasTextDraws.length - 1; i >= 0; i--) {
+        var draw = this.canvasTextDraws[i];
+        if (draw.canvasId !== canvasId) continue;
+        if (timestamp - draw.timestamp > maxTimeDiff) break;
+
+        var isLabel = /^[A-Z]{2,3}\\d{3,4}$/.test(draw.text) || /^[A-Z]+\\d+\\s*-\\s*.+/.test(draw.text);
+        if (!isLabel) continue;
+
+        var dx = draw.x - x;
+        var dy = draw.y - y;
+        var absDx = Math.abs(dx);
+        var absDy = Math.abs(dy);
+
+        if (absDx < maxHorizontalDist && absDy < maxVerticalDist) {
+          var distance = Math.sqrt(dx * dx + dy * dy);
+          var score = dy < 0 ? distance * 0.3 : dy > 0 ? distance * 2.0 : distance;
+          candidates.push({ label: draw.text, score: score });
+        }
+      }
+
+      if (candidates.length > 0) {
+        candidates.sort(function(a, b) { return a.score - b.score; });
+        return candidates[0].label;
+      }
+      return null;
+    },
+    getCanvasIndex: function(canvas) {
+      var canvases = document.getElementsByTagName('canvas');
+      for (var i = 0; i < canvases.length; i++) {
+        if (canvases[i] === canvas) return i;
+      }
+      return -1;
+    },
+    updateReceivedValues: function(values) {
+      this.lastReceivedValues = values;
+    }
+  };
+
+  if (typeof CanvasRenderingContext2D !== 'undefined') {
+    window.spsValueTracker.startTracking();
+  }
+})();`;
+  try {
+    const doc = window.document;
+    const root = doc && (doc.documentElement || doc.head || doc.body);
+    if (root && doc && typeof doc.createElement === "function") {
+      const scriptEl = doc.createElement("script");
+      scriptEl.textContent = trackerScript;
+      root.appendChild(scriptEl);
+      return { injected: true };
+    }
+    // Fallback: directly evaluate if DOM root is not ready yet
+    if (typeof window.eval === "function") {
+      window.eval(trackerScript);
+      return { injected: true, fallback: "eval" };
+    }
+    return { injected: false, reason: "No document root available for script injection" };
+  } catch (err) {
+    return { injected: false, reason: err && err.message ? err.message : String(err) };
+  }
+}
+
 function injectCanvasValueWatcher(window, canvasNameMap = {}) {
   if (!window || !window.CanvasRenderingContext2D || !window.CanvasRenderingContext2D.prototype) {
     return { installed: false, reason: "CanvasRenderingContext2D not available" };
@@ -993,8 +1300,24 @@ function injectCanvasValueWatcher(window, canvasNameMap = {}) {
     const py = Number.isFinite(y) ? Math.round(y) : 0;
     const key = `${canvasId}:${px}:${py}`;
     const previous = lastValues.get(key);
+
+    // ALWAYS update metrics, even if value didn't change
+    lastValues.set(key, value);
+
+    // Update Prometheus Metric (if available)
+    try {
+      const valNum = parseFloat(String(value).replace(",", "."));
+      if (!isNaN(valNum) && typeof getGauge === "function" && typeof buildMetricName === "function") {
+        // Use 'value' as default tag to match previous behavior
+        const mName = buildMetricName(canvasName, "value");
+        getGauge(mName, `${canvasName} value`).set(valNum);
+      }
+    } catch (err) {
+      // ignore update errors
+    }
+
+    // Only log when value changes to avoid spam
     if (previous !== value) {
-      lastValues.set(key, value);
       window.console.log("[canvas-watcher] value changed", {
         location: key,
         value,
@@ -1003,20 +1326,7 @@ function injectCanvasValueWatcher(window, canvasNameMap = {}) {
         canvasId,
         canvasName,
       });
-
-      // Update Prometheus Metric (if available)
-      try {
-        const valNum = parseFloat(String(value).replace(",", "."));
-        if (!isNaN(valNum) && typeof getGauge === "function" && typeof buildMetricName === "function") {
-          // Use 'value' as default tag to match previous behavior
-          const mName = buildMetricName(canvasName, "value");
-          getGauge(mName, `${canvasName} value`).set(valNum);
-        }
-      } catch (err) {
-        // ignore update errors
-      }
     }
-    // Don't log redrawn messages - they create too much noise
   };
 
   prototype.fillText = function patchedFillText(text, x, y, ...rest) {
@@ -1029,8 +1339,32 @@ function injectCanvasValueWatcher(window, canvasNameMap = {}) {
     return originalStrokeText.apply(this, [text, x, y, ...rest]);
   };
 
+  // Add a periodic canvas scanner to log all tracked values every 5 seconds
+  const periodicLogger = setInterval(() => {
+    const allValues = [];
+    lastValues.forEach((value, key) => {
+      const [canvasId] = key.split(':');
+      const canvasName = canvasNameMap[canvasId] || canvasId;
+      const numVal = parseFloat(String(value).replace(",", "."));
+      if (!isNaN(numVal)) {
+        allValues.push({
+          location: key,
+          canvasId,
+          canvasName,
+          value,
+          numericValue: numVal
+        });
+      }
+    });
+    if (allValues.length > 0) {
+      window.console.log(`[canvas-watcher] Periodic scan found ${allValues.length} numeric values:`, allValues);
+    } else {
+      window.console.log('[canvas-watcher] Periodic scan: No numeric values tracked yet');
+    }
+  }, 5000); // Log every 5 seconds
+
   prototype.__canvasValueWatcherInstalled = true;
-  return { installed: true };
+  return { installed: true, periodicLogger };
 }
 
 function installCanvasSupport(window, options = {}) {
@@ -1285,41 +1619,6 @@ function captureCanvasSnapshots(dom, snapshotRequests = []) {
   return snapshots;
 }
 
-async function simulateMouseMovements(dom, options = {}) {
-  if (!dom || !dom.window || typeof dom.window.MouseEvent !== "function") {
-    return { simulated: 0, reason: "MouseEvent not available" };
-  }
-  const window = dom.window;
-  const document = window.document;
-
-  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-  const count = clamp(Number(options.count) || 8, 1, 100);
-  const minDelay = Math.max(Number(options.minDelayMs) || 20, 0);
-  const maxDelay = Math.max(Number(options.maxDelayMs) || 120, minDelay);
-
-  const width =
-    clamp(Number(options.viewportWidth) || window.innerWidth || 1280, 320, 3840);
-  const height =
-    clamp(Number(options.viewportHeight) || window.innerHeight || 800, 240, 2160);
-
-  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  for (let i = 0; i < count; i += 1) {
-    const x = Math.floor(Math.random() * width);
-    const y = Math.floor(Math.random() * height);
-    const eventInit = { clientX: x, clientY: y, bubbles: true };
-    ["pointermove", "mousemove"].forEach((type) => {
-      window.dispatchEvent(new window.MouseEvent(type, eventInit));
-      document.dispatchEvent(new window.MouseEvent(type, eventInit));
-    });
-    const delay = minDelay + Math.random() * (maxDelay - minDelay);
-    if (delay > 0) {
-      await wait(delay);
-    }
-  }
-  return { simulated: count };
-}
-
 function waitForWindowLoad(dom, timeoutMs = 8000) {
   if (!dom || !dom.window) {
     return Promise.resolve({ waited: false, reason: "No window" });
@@ -1405,7 +1704,10 @@ async function renderPagePayload(payload = {}, index = 0) {
     url: payload.url || "https://example.test",
     pretendToBeVisual: true,
     runScripts: runScripts,
-    resources: allowUnsafeScripts ? "usable" : undefined,
+    resources: new ResourceLoader({
+      strictSSL: false,
+      userAgent: payload.headers && payload.headers["User-Agent"] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+    }),
     cookieJar: sharedCookieJar,
     virtualConsole,
     beforeParse(window) {
@@ -1424,6 +1726,339 @@ async function renderPagePayload(payload = {}, index = 0) {
       if (payload && payload.webVisuBinaryPath) {
         window.__payloadWebVisuBinaryPath = payload.webVisuBinaryPath;
       }
+      // Minimal crypto.subtle polyfill for legacy WebVisu auth flows
+      // Minimal crypto.subtle polyfill for legacy WebVisu auth flows
+      if (!window.crypto) {
+        window.crypto = {};
+      }
+      if (!window.crypto.subtle) {
+        window.crypto.subtle = {
+          digest: async () => new ArrayBuffer(0),
+          importKey: async () => ({}),
+          encrypt: async () => new ArrayBuffer(0),
+          decrypt: async () => new ArrayBuffer(0),
+        };
+      }
+      // Patch legacy e!Cockpit image loader (Gb.prototype.Ol) to bypass real network fetches
+      // Legacy image stub: Always enabled for old e!Cockpit WebVisu to prevent infinite retry loops
+      if (window.Image) {
+        const transparent = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+        const shimImage = (originalImg) => {
+          const listeners = {};
+          const img = originalImg || new window.Image();
+          // Make naturalWidth/Height/complete writable to satisfy legacy runtimes and jsdom
+          try {
+            Object.defineProperty(img, "naturalWidth", { configurable: true, writable: true, value: img.naturalWidth || 0 });
+            Object.defineProperty(img, "naturalHeight", { configurable: true, writable: true, value: img.naturalHeight || 0 });
+            Object.defineProperty(img, "complete", { configurable: true, writable: true, value: false });
+          } catch (_) {
+            /* ignore */
+          }
+          const fire = (type) => {
+            const evt = new window.Event(type);
+            if (typeof img[`on${type}`] === "function") {
+              try { img[`on${type}`](evt); } catch (_) { }
+            }
+            (listeners[type] || []).forEach((fn) => {
+              try { fn(evt); } catch (_) { }
+            });
+          };
+          const origAddEventListener = img.addEventListener ? img.addEventListener.bind(img) : null;
+          img.addEventListener = function (type, handler) {
+            listeners[type] = listeners[type] || [];
+            listeners[type].push(handler);
+            if (origAddEventListener) {
+              try { origAddEventListener(type, handler); } catch (_) { }
+            }
+          };
+          const origRemoveEventListener = img.removeEventListener ? img.removeEventListener.bind(img) : null;
+          img.removeEventListener = function (type, handler) {
+            if (!listeners[type]) return;
+            listeners[type] = listeners[type].filter((h) => h !== handler);
+            if (origRemoveEventListener) {
+              try { origRemoveEventListener(type, handler); } catch (_) { }
+            }
+          };
+          Object.defineProperty(img, "src", {
+            configurable: true,
+            enumerable: true,
+            get() { return img.__src || ""; },
+            set(value) {
+              const urlStr = String(value || "");
+              let absoluteUrl = urlStr;
+              // Resolve relative URLs to absolute to match browser behavior
+              if (urlStr && !urlStr.match(/^[a-z]+:/i)) {
+                try {
+                  absoluteUrl = new window.URL(urlStr, window.document.baseURI).href;
+                } catch (_) {
+                  absoluteUrl = urlStr;
+                }
+              }
+              img.__src = absoluteUrl;
+              // Set dimensions before firing load event
+              if (!img.width || img.width === 0) img.width = 100;
+              if (!img.height || img.height === 0) img.height = 100;
+              try { img.naturalWidth = img.width; } catch (_) { }
+              try { img.naturalHeight = img.height; } catch (_) { }
+              img.complete = true;
+              // Fire load event asynchronously to mimic real image loading
+              setTimeout(() => fire("load"), 0);
+            },
+          });
+          const originalSetAttribute = img.setAttribute ? img.setAttribute.bind(img) : null;
+          img.setAttribute = function (name, value) {
+            if (String(name).toLowerCase() === "src") {
+              img.src = value;
+              return;
+            }
+            if (originalSetAttribute) {
+              return originalSetAttribute(name, value);
+            }
+          };
+          // Initialize dimensions
+          img.width = img.width || 100;
+          img.height = img.height || 100;
+          try { img.naturalWidth = img.naturalWidth || img.width || 100; } catch (_) { }
+          try { img.naturalHeight = img.naturalHeight || img.height || 100; } catch (_) { }
+          img.complete = false; // Will be set to true when src is assigned
+          return img;
+        };
+
+        // Override global Image constructor to use shim
+        const OriginalImage = window.Image;
+        window.Image = function PatchedImage(width, height) {
+          const img = new OriginalImage(width, height);
+          return shimImage(img);
+        };
+
+        // Override document.createElement to use shim for images
+        // This ensures that images created via createElement('img') are also stubbed
+        // preventing network requests and potential infinite retry loops on failure
+        const originalCreateElement = window.document.createElement;
+        window.document.createElement = function (tagName, ...args) {
+          const element = originalCreateElement.call(this, tagName, ...args);
+          if (tagName && String(tagName).toLowerCase() === "img") {
+            return shimImage(element);
+          }
+          return element;
+        };
+
+        // Patch Gb.prototype.Ol if present to use shim (for old e!Cockpit WebVisu)
+        // Wait for Gb to be defined, then patch it
+        const patchGb = () => {
+          if (!window.Gb || !window.Gb.prototype) return false;
+          if (window.Gb.prototype.__patchedSkipImages) return true;
+
+          if (typeof window.Gb.prototype.Ol === "function") {
+            window.Gb.prototype.Ol = function patchedOl(a, b) {
+              // Create a shimmed image and immediately treat as loaded (no network)
+              const shimmed = shimImage(new OriginalImage());
+              this.od = shimmed;
+              const c = this;
+              shimmed.onload = function () {
+                if (typeof c.Ev === "function") c.Ev();
+              };
+              shimmed.onerror = function () {
+                if (typeof c.Ev === "function") c.Ev();
+              };
+              try {
+                shimmed.src = b || transparent; // Skip loading actual image URLs
+              } catch (err) {
+                // If setting src fails, still notify load completion
+                if (typeof shimmed.onload === "function") {
+                  try { shimmed.onload(); } catch (_) { }
+                }
+              }
+            };
+            window.console.log("[jsdom-patch] Patched legacy e!Cockpit image loader (skipping image fetches)");
+          }
+          // Suppress legacy retry logging from cw() ("Triing to load the image ... again")
+          if (window.Gb.prototype) {
+            window.Gb.prototype.cw = function noopImageRetry() {
+              // Mark as loaded/failed without scheduling retries or logging
+              if (typeof this.$h === "function") {
+                try { this.$h(3); } catch (_) { }
+              }
+            };
+          }
+
+          window.Gb.prototype.__patchedSkipImages = true;
+          return true;
+        };
+
+        // Try to patch immediately and also after a delay
+        // Keep trying until Gb appears to ensure the patch sticks
+        const attemptPatch = () => {
+          if (patchGb()) return;
+          setTimeout(attemptPatch, 100);
+        };
+        attemptPatch();
+
+        // Keep WebVisu polling alive by preventing focus/visibility checks from stopping it
+        // Old e!Cockpit WebVisu may stop polling when it thinks the page is hidden/unfocused
+        Object.defineProperty(window.document, 'hidden', {
+          configurable: true,
+          get: () => false
+        });
+        Object.defineProperty(window.document, 'visibilityState', {
+          configurable: true,
+          get: () => 'visible'
+        });
+        try {
+          Object.defineProperty(window.document, 'hasFocus', {
+            configurable: true,
+            value: () => true
+          });
+        } catch (err) {
+          // hasFocus might already be defined
+        }
+
+        // Prevent page from detecting it's in background
+        window.addEventListener('blur', (e) => { e.stopImmediatePropagation(); }, true);
+        window.addEventListener('visibilitychange', (e) => { e.stopImmediatePropagation(); }, true);
+
+        // Ensure setInterval and setTimeout always execute (prevent throttling)
+        // Old e!Cockpit WebVisu relies on timers for polling
+        const originalSetInterval = window.setInterval;
+        const originalSetTimeout = window.setTimeout;
+        const originalClearInterval = window.clearInterval;
+        const originalClearTimeout = window.clearTimeout;
+
+        // Keep track of active intervals to prevent them from being cleared prematurely
+        const activeIntervals = new Map();
+        const activeTimeouts = new Map();
+
+        window.setInterval = function (callback, delay, ...args) {
+          if (typeof callback === "string") {
+            const code = callback;
+            callback = function () { window.eval(code); };
+          }
+          const id = originalSetInterval.call(window, function (...callbackArgs) {
+            try {
+              callback.apply(this, callbackArgs);
+            } catch (err) {
+              // Don't let errors in callbacks stop the interval
+              window.console.error('[jsdom-patch] Interval callback error:', err.message);
+            }
+          }, delay, ...args);
+          activeIntervals.set(id, { callback, delay });
+          // Log ALL interval registration for WebVisu polling diagnostics
+          window.console.log(`[jsdom-patch] setInterval registered: delay=${delay}ms, total active=${activeIntervals.size}`);
+          return id;
+        };
+
+        // Track the last polling timer callback for auto-rescheduling
+        let lastPollingCallback = null;
+        let lastPollingArgs = null;
+        let pollingTimerActive = false;
+        let autoRescheduleTimer = null;
+
+        window.setTimeout = function (callback, delay, ...args) {
+          if (typeof callback === "string") {
+            const code = callback;
+            // Log that we are about to compile/run a string callback
+            if (delay >= 90 && delay <= 110) {
+              window.console.log(`[jsdom-patch] Preparing string callback for polling timer: "${code.substring(0, 50)}..."`);
+            }
+            callback = function () {
+              try {
+                window.eval(code);
+              } catch (e) {
+                window.console.error(`[jsdom-patch] Error executing string callback "${code.substring(0, 30)}...":`, e.message);
+              }
+            };
+          }
+          const isPollingTimer = delay === 100;
+
+          // Capture polling timer callback for potential auto-rescheduling
+          if (isPollingTimer) {
+            lastPollingCallback = callback;
+            lastPollingArgs = args;
+            pollingTimerActive = true;
+            window.console.log(`[jsdom-patch] Polling timer (${delay}ms) captured for auto-reschedule protection`);
+
+            // Clear any existing auto-reschedule timer since a new one was scheduled
+            if (autoRescheduleTimer) {
+              originalClearTimeout.call(window, autoRescheduleTimer);
+              autoRescheduleTimer = null;
+            }
+          }
+
+          // Track ALL setTimeout calls with short delays (potential polling)
+          if (delay > 0 && delay <= 5000) {
+            window.console.log(`[jsdom-patch] setTimeout scheduled: delay=${delay}ms, active=${activeTimeouts.size + 1}`);
+          }
+          const id = originalSetTimeout.call(window, function (...callbackArgs) {
+            activeTimeouts.delete(id);
+            if (delay > 0 && delay <= 5000) {
+              window.console.log(`[jsdom-patch] setTimeout FIRED: delay=${delay}ms, remaining=${activeTimeouts.size}`);
+            }
+            try {
+              callback.apply(this, callbackArgs);
+              if (delay > 0 && delay <= 5000) {
+                window.console.log(`[jsdom-patch] setTimeout callback completed: delay=${delay}ms`);
+              }
+
+              // After polling timer completes, set up a watchdog to auto-reschedule if WebVisu doesn't
+              if (isPollingTimer) {
+                window.console.log(`[jsdom-patch] Polling timer completed. Setting up 300ms watchdog for auto-reschedule...`);
+                autoRescheduleTimer = originalSetTimeout.call(window, () => {
+                  if (pollingTimerActive && lastPollingCallback) {
+                    window.console.warn(`[jsdom-patch] WebVisu didn't reschedule polling! Force-rescheduling now...`);
+                    // Re-schedule the polling timer
+                    window.setTimeout(lastPollingCallback, 100, ...lastPollingArgs);
+                  }
+                }, 300); // Wait 300ms - if no new polling timer scheduled, force one
+              }
+            } catch (err) {
+              // Log timer errors for polling timers to help diagnose issues
+              if (isPollingTimer) {
+                window.console.error(`[jsdom-patch] Polling timer (${delay}ms) error:`, err.message);
+              }
+              // Suppress errors to keep WebVisu running
+              // The "Image or Canvas expected" error occurs in legacy e!Cockpit but doesn't prevent polling
+              // Don't throw - let execution continue so WebVisu can continue operating
+            }
+          }, delay, ...args);
+          activeTimeouts.set(id, { callback, delay });
+          return id;
+        };
+
+        window.clearInterval = function (id) {
+          activeIntervals.delete(id);
+          return originalClearInterval.call(window, id);
+        };
+
+        window.clearTimeout = function (id) {
+          activeTimeouts.delete(id);
+          return originalClearTimeout.call(window, id);
+        };
+
+        window.console.log("[jsdom-patch] Visibility and focus overrides installed to keep WebVisu polling active");
+      }
+      // Legacy value tracker for old e!Cockpit WebVisu
+      // This tracks values drawn on canvas to help identify which tags correspond to which values
+      if (true) {
+        const trackerStatus = injectLegacyValueTracker(window);
+        if (!trackerStatus.injected) {
+          window.console.warn("[jsdom-patch] legacy value tracker injection failed:", trackerStatus.reason);
+        } else {
+          window.console.log("[jsdom-patch] legacy value tracker injected");
+        }
+      }
+      // Legacy WebVisu compatibility: older runtimes sometimes call addEventListener on non-nodes.
+      if (!Object.prototype.hasOwnProperty("addEventListener")) {
+        try {
+          Object.defineProperty(Object.prototype, "addEventListener", {
+            configurable: true,
+            enumerable: false,
+            writable: true,
+            value: function noopAddEventListener() { return undefined; },
+          });
+        } catch (err) {
+          // ignore if defineProperty fails
+        }
+      }
 
       // Prevent crashes from invalid appendChild calls in WebVisu: ignore non-Node children
       if (window.Node && window.Node.prototype && typeof window.Node.prototype.appendChild === "function") {
@@ -1436,12 +2071,126 @@ async function renderPagePayload(payload = {}, index = 0) {
         };
       }
 
-      // Filter noisy imagepool warnings that clutter logs
+      // Implement requestAnimationFrame for WebVisu rendering loop
+      // WebVisu uses requestAnimationFrame to start its polling/rendering loop
+      if (!window.requestAnimationFrame) {
+        let rafId = 0;
+        const rafCallbacks = new Map();
+        window.requestAnimationFrame = function (callback) {
+          rafId++;
+          const id = rafId;
+          window.console.log(`[jsdom-patch] requestAnimationFrame called, id=${id}`);
+          // Execute callback in next tick to mimic browser behavior
+          const timerId = setTimeout(() => {
+            rafCallbacks.delete(id);
+            try {
+              window.console.log(`[jsdom-patch] requestAnimationFrame callback executing, id=${id}`);
+              callback(Date.now());
+              window.console.log(`[jsdom-patch] requestAnimationFrame callback completed, id=${id}`);
+            } catch (err) {
+              window.console.error('[jsdom-patch] requestAnimationFrame callback error:', err.message);
+            }
+          }, 16); // ~60fps
+          rafCallbacks.set(id, timerId);
+          return id;
+        };
+        window.cancelAnimationFrame = function (id) {
+          const timerId = rafCallbacks.get(id);
+          if (timerId) {
+            clearTimeout(timerId);
+            rafCallbacks.delete(id);
+            window.console.log(`[jsdom-patch] requestAnimationFrame cancelled, id=${id}`);
+          }
+        };
+        window.console.log('[jsdom-patch] requestAnimationFrame polyfill installed');
+      }
+
+      // WORKAROUND: Force WebVisu polling to continue after initial load
+      // Old e!Cockpit WebVisu stops scheduling timers after initial load for unknown reasons
+      // We'll manually trigger the polling function to keep it alive
+      setTimeout(() => {
+        // Log what WebVisu objects are available
+        window.console.log('[jsdom-patch] Inspecting window for WebVisu objects...');
+        const webvisuKeys = [];
+        for (const key in window) {
+          if (key.toLowerCase().includes('webvisu') ||
+              key.toLowerCase().includes('cds') ||
+              key.toLowerCase().includes('webmi') ||
+              key === 'Gb' ||
+              (typeof window[key] === 'object' && window[key] !== null &&
+               (window[key].update || window[key].poll || window[key].communication))) {
+            webvisuKeys.push(key);
+          }
+        }
+        window.console.log(`[jsdom-patch] Found potential WebVisu objects: ${webvisuKeys.join(', ')}`);
+
+        // Inspect WebvisuInst structure to find polling function
+        let pollingFn = null;
+        if (window.WebvisuInst) {
+          window.console.log('[jsdom-patch] Inspecting WebvisuInst...');
+          const inst = window.WebvisuInst;
+
+          // Log ALL properties to understand the minified structure
+          const allProps = [];
+          for (const prop in inst) {
+            const type = typeof inst[prop];
+            allProps.push(`${prop}:${type}`);
+          }
+          window.console.log(`[jsdom-patch] ALL WebvisuInst properties: ${allProps.slice(0, 30).join(', ')}...`);
+
+          // Try common minified names first (eCockpit minifies everything)
+          const candidateMethods = ['Qa', 'Pa', 'Ra', 'Sa', 'Ta', 'hb', 'nb', 'cyclic', 'update', 'tick'];
+          for (const method of candidateMethods) {
+            if (typeof inst[method] === 'function') {
+              window.console.log(`[jsdom-patch] Found candidate: ${method}`);
+            }
+          }
+
+          // Look for Db object (eCockpit uses Db.send for WebVisuV3.bin)
+          if (inst.Db) {
+            window.console.log(`[jsdom-patch] Found Db object, type: ${typeof inst.Db}`);
+            if (typeof inst.Db.send === 'function') {
+              window.console.log('[jsdom-patch] Found Db.send method');
+            }
+          }
+
+          // Try the most likely candidates for the polling function
+          if (typeof inst.Qa === 'function') {
+            pollingFn = () => inst.Qa();
+            window.console.log('[jsdom-patch] Using WebvisuInst.Qa()');
+          } else if (typeof inst.Pa === 'function') {
+            pollingFn = () => inst.Pa();
+            window.console.log('[jsdom-patch] Using WebvisuInst.Pa()');
+          } else if (typeof inst.cyclic === 'function') {
+            pollingFn = () => inst.cyclic();
+            window.console.log('[jsdom-patch] Using WebvisuInst.cyclic()');
+          }
+        }
+
+        if (pollingFn) {
+          window.console.log('[jsdom-patch] Setting up forced polling interval (100ms)');
+          window.__forcedPollingInterval = setInterval(() => {
+            try {
+              pollingFn();
+            } catch (err) {
+              window.console.error('[jsdom-patch] Forced polling error:', err.message);
+            }
+          }, 100);
+        } else {
+          window.console.warn('[jsdom-patch] Could not find WebVisu polling function to force');
+          window.console.warn('[jsdom-patch] Available keys: ' + webvisuKeys.join(', '));
+        }
+      }, 5000); // Wait 5 seconds for page to initialize
+
+      // Filter noisy image-related warnings that clutter logs
       if (window.console && typeof window.console.warn === "function") {
         const originalWarn = window.console.warn.bind(window.console);
         window.console.warn = function patchedWarn(...args) {
           const message = args && args.length ? String(args[0]) : "";
-          if (message.includes("Imagepoolentry for") && message.includes("not found")) {
+          if (
+            (message.includes("Imagepoolentry for") && message.includes("not found")) ||
+            message.includes("Loading image ")
+          ) {
             return;
           }
           return originalWarn(...args);
@@ -1572,6 +2321,31 @@ async function renderPagePayload(payload = {}, index = 0) {
     }
   });
 
+  // Surface window-level errors that might otherwise be swallowed
+  if (dom && dom.window && typeof dom.window.addEventListener === "function") {
+    dom.window.addEventListener("error", (evt) => {
+      try {
+        const msg = evt && evt.error && evt.error.stack
+          ? evt.error.stack
+          : evt && evt.message
+            ? evt.message
+            : String(evt);
+        dom.window.console.error("[jsdom-window-error]", msg);
+      } catch (_) {
+        // ignore logging failures
+      }
+    });
+    dom.window.addEventListener("unhandledrejection", (evt) => {
+      try {
+        const reason = evt && evt.reason;
+        const msg = reason && reason.stack ? reason.stack : String(reason);
+        dom.window.console.warn("[jsdom-window-unhandledrejection]", msg);
+      } catch (_) {
+        // ignore logging failures
+      }
+    });
+  }
+
   // NOTE: We previously froze DOM window prototypes for security, but this
   // breaks normal operations that need to modify arrays/objects. Removed.
 
@@ -1592,13 +2366,9 @@ async function renderPagePayload(payload = {}, index = 0) {
   // XHR debugging removed - only logging canvas-watcher messages now
 
   let mouseMoveInfo = null;
-  if (payload.simulateMouseMovements) {
-    const options =
-      typeof payload.simulateMouseMovements === "object"
-        ? payload.simulateMouseMovements
-        : {};
-    mouseMoveInfo = await simulateMouseMovements(dom, options);
-  }
+  // Skip pointer simulation for legacy 2-canvas WebVisu to avoid IllegalArgument errors
+  // Mouse movement simulation disabled to avoid legacy WebVisu errors
+  mouseMoveInfo = { simulated: 0, reason: "Mouse simulation disabled" };
 
   const waitForLoadMs = Number.isFinite(payload.waitForLoadMs)
     ? payload.waitForLoadMs
@@ -1702,6 +2472,15 @@ async function main() {
             dom: result._dom,
             virtualConsole: result._virtualConsole
           };
+
+          // CRITICAL: Keep the Node.js event loop alive so JSDOM timers continue to run
+          // WebVisu uses setInterval internally to poll the server, but JSDOM timers
+          // don't keep the process alive by themselves. We need this heartbeat.
+          const keepAliveTimer = setInterval(() => {
+            // This timer keeps the event loop active, allowing JSDOM's internal
+            // WebVisu timers to continue executing and making XHR requests
+          }, 30000); // 30 second heartbeat
+          pageState.keepAliveTimer = keepAliveTimer;
         }
 
         // Output result (Properties _dom and _virtualConsole are not enumerable)
@@ -1740,7 +2519,7 @@ async function main() {
         }
 
         if (payload.simulateMouseMovements) {
-          output.mouseMovements = await simulateMouseMovements(dom, payload.simulateMouseMovements);
+          //output.mouseMovements = await simulateMouseMovements(dom, payload.simulateMouseMovements);
           actionTaken = true;
         }
 

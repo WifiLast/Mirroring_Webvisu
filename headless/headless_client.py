@@ -14,6 +14,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse, urlunparse
 
 
 def build_payload(url: str, return_dom: bool = False, keep_alive: bool = False) -> Dict[str, Any]:
@@ -48,6 +49,41 @@ def build_payload(url: str, return_dom: bool = False, keep_alive: bool = False) 
         # Keep the Node process alive (so the page keeps running) when requested.
         "keepAlive": keep_alive,
     }
+
+
+LEGACY_SIGNATURE = "Gb.prototype.Ol"
+
+
+def _upgrade_to_https(url: str) -> str:
+    """
+    Swap http:// for https:// while preserving the rest of the URL.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "http":
+        return url
+    return urlunparse(parsed._replace(scheme="https"))
+
+
+def _has_legacy_signature(response: Dict[str, Any]) -> bool:
+    """
+    Detect legacy e!Cockpit WebVisu by looking for Gb.prototype.Ol logs.
+    """
+    logs = response.get("consoleLogs") or []
+    for entry in logs:
+        message = entry.get("message")
+        if isinstance(message, str) and LEGACY_SIGNATURE in message:
+            return True
+        for arg in entry.get("arguments", []):
+            if isinstance(arg, str) and LEGACY_SIGNATURE in arg:
+                return True
+    return False
+
+
+def _should_retry_with_https(url: str, response: Dict[str, Any]) -> bool:
+    """
+    HTTPS retry temporarily disabled.
+    """
+    return False
 
 
 class HeadlessClient:
@@ -134,16 +170,31 @@ class HeadlessClient:
         await self.stop()
 
 
-async def run_once(url: str, return_dom: bool = False):
+async def _render_single_page(url: str, return_dom: bool = False) -> Dict[str, Any]:
     """
-    Run a single fetch and return the result.
+    Load a page once (non-keep-alive) and return the runner response.
     """
     client = HeadlessClient()
     async with client:
         payload = build_payload(url, return_dom=return_dom, keep_alive=False)
         await client.send_command(payload)
-        response = await client.read_response()
-        print(json.dumps(response, indent=2))
+        return await client.read_response()
+
+
+async def run_once(url: str, return_dom: bool = False):
+    """
+    Run a single fetch and return the result.
+    """
+    response = await _render_single_page(url, return_dom=return_dom)
+
+    if _should_retry_with_https(url, response):
+        upgraded_url = _upgrade_to_https(url)
+        sys.stderr.write(
+            f"Detected legacy e!Cockpit WebVisu (Gb.prototype.Ol). Retrying via HTTPS: {upgraded_url}\n"
+        )
+        response = await _render_single_page(upgraded_url, return_dom=return_dom)
+
+    print(json.dumps(response, indent=2))
 
 
 async def run_continuous(url: str, return_dom: bool = False):
@@ -152,70 +203,91 @@ async def run_continuous(url: str, return_dom: bool = False):
     The Node.js runner handles Prometheus metrics internally.
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    
-    client = HeadlessClient()
-    async with client:
-        # Task to read stderr (logs from Node.js)
-        async def process_stderr():
-            async for line in client.iter_stderr():
-                line = line.strip()
-                if not line: continue
-                # We can just output them or filter them.
-                # Node process now handles metrics, so we just log important stuff or everything
-                sys.stderr.write(line + "\n")
+    target_url = url
 
-        # Task to read stdout (responses to commands) to avoid pipe blocking
-        async def process_stdout():
-            while True:
-                try:
-                    await client.read_response()
-                except (RuntimeError, asyncio.CancelledError):
-                    break
-        
-        # Task to keep page alive with mouse movements
-        async def keep_alive_pinger():
-            while True:
-                await asyncio.sleep(5)
-                try:
-                    await client.send_command({
-                        "simulateMouseMovements": {
-                            "count": 1,
-                            "minDelayMs": 10,
-                            "maxDelayMs": 20
-                        }
-                    })
-                except Exception:
-                    break
+    while True:
+        stdout_task = None
+        keep_alive_task = None
+        restart_url: Optional[str] = None
+        client = HeadlessClient()
+        async with client:
+            # Task to read stderr (logs from Node.js)
+            async def process_stderr():
+                async for line in client.iter_stderr():
+                    line = line.strip()
+                    if not line: continue
+                    # We can just output them or filter them.
+                    # Node process now handles metrics, so we just log important stuff or everything
+                    sys.stderr.write(line + "\n")
 
-        stderr_task = asyncio.create_task(process_stderr())
+            # Task to read stdout (responses to commands) to avoid pipe blocking
+            async def process_stdout():
+                while True:
+                    try:
+                        resp = await client.read_response()
+                        # Output response keys to show activity
+                        sys.stderr.write(f"[client] Received update. Keys: {list(resp.keys())}\n")
+                    except (RuntimeError, asyncio.CancelledError):
+                        break
+            
+            # Task to keep page alive with mouse movements
+            async def keep_alive_pinger():
+                while True:
+                    await asyncio.sleep(5)
+                    try:
+                        sys.stderr.write("[client] Sending keep-alive ping...\n")
+                        await client.send_command({}) # Ping to keep connection alive
+                    except Exception:
+                        break
 
-        sys.stderr.write(f"Loading {url}...\n")
-        payload = build_payload(url, return_dom=return_dom, keep_alive=True)
-        await client.send_command(payload)
-        
-        try:
-            response = await client.read_response()
-            sys.stderr.write("Initial Load Complete.\n")
-            # We assume Node started Prometheus server if it could.
-            print(json.dumps(response, indent=2))
+            stderr_task = asyncio.create_task(process_stderr())
+
+            sys.stderr.write(f"Loading {target_url}...\n")
+            payload = build_payload(target_url, return_dom=return_dom, keep_alive=True)
+            await client.send_command(payload)
             
-            stdout_task = asyncio.create_task(process_stdout())
-            keep_alive_task = asyncio.create_task(keep_alive_pinger())
-            
-            sys.stderr.write("Press Ctrl+C to stop...\n")
-            while True:
-                await asyncio.sleep(1)
-        except asyncio.CancelledError:
-            pass
-        except KeyboardInterrupt:
-            pass
-        finally:
-            stderr_task.cancel()
-            if 'stdout_task' in locals(): stdout_task.cancel()
-            if 'keep_alive_task' in locals(): keep_alive_task.cancel()
-            
-            # Use gather to let them finish cleaning up
-            await asyncio.gather(stderr_task, return_exceptions=True)
+            try:
+                response = await client.read_response()
+
+                if _should_retry_with_https(target_url, response):
+                    restart_url = _upgrade_to_https(target_url)
+                    sys.stderr.write(
+                        f"Detected legacy e!Cockpit WebVisu (Gb.prototype.Ol). Reloading via HTTPS: {restart_url}\n"
+                    )
+                    continue
+
+                is_legacy = _has_legacy_signature(response)
+
+                sys.stderr.write("Initial Load Complete.\n")
+                # We assume Node started Prometheus server if it could.
+                print(json.dumps(response, indent=2))
+
+                if is_legacy:
+                    sys.stderr.write("Legacy e!Cockpit detected; keeping timers alive.\n")
+
+                stdout_task = asyncio.create_task(process_stdout())
+                keep_alive_task = asyncio.create_task(keep_alive_pinger())
+                
+                sys.stderr.write("Press Ctrl+C to stop...\n")
+                while True:
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                pass
+            except KeyboardInterrupt:
+                pass
+            finally:
+                for task in (stderr_task, stdout_task, keep_alive_task):
+                    if task:
+                        task.cancel()
+                await asyncio.gather(
+                    *[task for task in (stderr_task, stdout_task, keep_alive_task) if task],
+                    return_exceptions=True,
+                )
+
+        if restart_url and restart_url != target_url:
+            target_url = restart_url
+            continue
+        break
 
 
 def main() -> int:
@@ -224,7 +296,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--url",
-        default="http://192.168.1.200:8080/webvisu/webvisu.htm",
+        default="http://192.168.1.17/webvisu/webvisu.htm",
         help="WebVisu URL to load (default: %(default)s)",
     )
     parser.add_argument(
