@@ -21,10 +21,15 @@ This folder contains a lightweight, browser-driven setup for mirroring WebVisu c
 ## Browser requirements
 - Install the Tampermonkey extension (Chrome/Chromium, Edge, Firefox) and load `script.js` as a userscript.
 - Use a modern browser with canvas support and allow the script to reach the backend over HTTP(S).
-- Keep the page open while watching canvases; a future headless client will remove this requirement.
+- Keep the page open while watching canvases; the headless client in `headless/` can take over for supported targets.
+
+## Headless capture (jsdom)
+- The `headless` folder bundles a jsdom-based runner (`jsdom_runner.js`) and Python wrapper (`headless_client.py`) that load a WebVisu page without a real browser and expose its canvas tags to Prometheus on port 8077.
+- Install Node dependencies once (`npm install` inside `headless/`), then run `python headless/headless_client.py --url <webvisu-url>` to keep the page alive; `headless/watch_canvas_values.py` streams tag changes for quick checks.
+- Works end-to-end with CODESYS 3.5 WebVisu pages; e!Cockpit WebVisu currently breaks the data-exchange hooks, so tag/value updates do not flow yet.
 
 ## Roadmap / TODO
-- Headless client: run the picker/poller logic in a headless browser (e.g., Playwright/Chromium) to capture metrics without a manual session.
+- Headless client: harden the jsdom runner, align its data-exchange hooks with the browser userscript, and add e!Cockpit WebVisu compatibility.
 - ~~Legacy hardware: add a compatibility layer for older targets such as e!Cockpit/legacy WebVisu variants where canvas structures differ.~~
 - Browser UX: minor polish for the picker overlay and auto-reconnect to the backend when the network drops.
 
