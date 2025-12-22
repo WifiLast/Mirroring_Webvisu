@@ -46,6 +46,8 @@ try {
 
 const CANVAS_BACKING_SYMBOL = Symbol("canvasBackingStore");
 const WEBGL_CONTEXT_SYMBOL = Symbol("webglContext");
+const JSDOM_ELEMENT_SYMBOL = Symbol("jsdomCanvasElement");
+const WINDOW_SYMBOL = Symbol("jsdomWindow");
 
 // Prometheus Metrics Integration
 const promClient = require("prom-client");
@@ -66,10 +68,25 @@ function sanitizeName(name, defaultVal = "value") {
   return clean.toLowerCase();
 }
 
-function buildMetricName(canvasName, tag) {
+function buildMetricName(canvasName, tag, prefix = null) {
   const tagPart = sanitizeName(tag, "value");
   const canvasPart = sanitizeName(canvasName, "canvas");
-  return canvasPart ? `${canvasPart}_${tagPart}` : tagPart;
+  let name = canvasPart ? `${canvasPart}_${tagPart}` : tagPart;
+  if (prefix) {
+    const prefixPart = sanitizeName(prefix, "jsdom");
+    name = `${prefixPart}_${name}`;
+  }
+  return name;
+}
+
+function metricsPrefixFromUrl(url, fallback = null) {
+  try {
+    const host = new URL(url).hostname || "";
+    if (host) return host;
+  } catch (err) {
+    // ignore parse errors
+  }
+  return fallback;
 }
 
 function getGauge(name, help) {
@@ -84,28 +101,14 @@ function getGauge(name, help) {
   return gauges.get(name);
 }
 
-// Load initial metrics from store
+// Load canvas naming metadata only (avoid seeding gauges with stale values)
 try {
   if (fs.existsSync(STORE_PATH)) {
-    const data = JSON.parse(fs.readFileSync(STORE_PATH, "utf8"));
-    Object.values(data).forEach(page => {
-      if (page.canvases) {
-        Object.entries(page.canvases).forEach(([key, info]) => {
-          const canvasName = info.canvasName || key;
-          (info.tags || []).forEach(tagEntry => {
-            const metricName = buildMetricName(canvasName, tagEntry.tag);
-            const val = parseFloat(String(tagEntry.value).replace(",", "."));
-            if (!isNaN(val)) {
-              getGauge(metricName, `${canvasName} - ${tagEntry.tag}`).set(val);
-            }
-          });
-        });
-      }
-    });
-    console.warn(`[prometheus] Initialized metrics from ${STORE_PATH}`);
+    JSON.parse(fs.readFileSync(STORE_PATH, "utf8"));
+    console.warn(`[prometheus] Loaded metrics store metadata from ${STORE_PATH}`);
   }
 } catch (err) {
-  console.warn(`[prometheus] Failed to load metrics store: ${err.message}`);
+  console.warn(`[prometheus] Failed to read metrics store: ${err.message}`);
 }
 
 // Start Prometheus Metrics Server
@@ -948,93 +951,164 @@ function loadCanvasNameMap() {
   return map;
 }
 
-function injectCanvasValueWatcher(window, canvasNameMap = {}) {
+function injectCanvasValueWatcher(window, canvasNameMap = {}, metricsPrefix = null) {
   if (!window || !window.CanvasRenderingContext2D || !window.CanvasRenderingContext2D.prototype) {
     return { installed: false, reason: "CanvasRenderingContext2D not available" };
   }
   const prototype = window.CanvasRenderingContext2D.prototype;
-  if (prototype.__canvasValueWatcherInstalled) {
-    return { installed: true, alreadyInstalled: true };
+
+  // Shared per-window metadata to avoid mixing canvases across sessions
+  if (!prototype.__canvasWatcherWindows) {
+    Object.defineProperty(prototype, "__canvasWatcherWindows", {
+      value: new WeakMap(),
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
+  }
+  const windowMap = prototype.__canvasWatcherWindows;
+  // Register/refresh this window's mapping + prefix
+  if (window && typeof window === "object") {
+    windowMap.set(window, {
+      canvasNameMap,
+      prefix: metricsPrefix,
+    });
   }
 
-  const originalFillText = prototype.fillText;
-  const originalStrokeText = prototype.strokeText;
-  if (typeof originalFillText !== "function" || typeof originalStrokeText !== "function") {
-    return { installed: false, reason: "Canvas text functions unavailable" };
-  }
-
-  const lastValues = new Map();
-  let canvasIdCounter = 0;
-
-  const getCanvasId = (canvas) => {
-    if (!canvas) {
-      return "unknown-canvas";
+  // Initialize shared watcher state if not already present
+  if (!prototype.__canvasValueWatcherInstalled) {
+    const originalFillText = prototype.fillText;
+    const originalStrokeText = prototype.strokeText;
+    if (typeof originalFillText !== "function" || typeof originalStrokeText !== "function") {
+      return { installed: false, reason: "Canvas text functions unavailable" };
     }
-    if (!canvas.__canvasWatcherId) {
-      const suffix = canvas.id ? canvas.id : `canvas-${canvasIdCounter + 1}`;
-      canvas.__canvasWatcherId = suffix;
-      canvasIdCounter += 1;
-    }
-    return canvas.__canvasWatcherId;
-  };
 
-  const handleDraw = (type, text, x, y, canvas) => {
-    if (!canvas) {
-      return;
-    }
-    const canvasId = getCanvasId(canvas);
-    const canvasName = canvasNameMap[canvasId] || canvasId;
-    const value = text === undefined || text === null ? "" : String(text).trim();
-    // Skip empty strings to reduce noise
-    if (!value) {
-      return;
-    }
-    const px = Number.isFinite(x) ? Math.round(x) : 0;
-    const py = Number.isFinite(y) ? Math.round(y) : 0;
-    const key = `${canvasId}:${px}:${py}`;
-    const previous = lastValues.get(key);
-    if (previous !== value) {
-      lastValues.set(key, value);
-      window.console.log("[canvas-watcher] value changed", {
-        location: key,
-        value,
-        previous,
-        type,
-        canvasId,
-        canvasName,
-      });
+    // Shared state across all sessions
+    prototype.__canvasWatcherLastValues = new Map();
+    prototype.__canvasWatcherIdCounter = 0;
 
-      // Update Prometheus Metric (if available)
-      try {
-        const valNum = parseFloat(String(value).replace(",", "."));
-        if (!isNaN(valNum) && typeof getGauge === "function" && typeof buildMetricName === "function") {
-          // Use 'value' as default tag to match previous behavior
-          const mName = buildMetricName(canvasName, "value");
-          getGauge(mName, `${canvasName} value`).set(valNum);
-        }
-      } catch (err) {
-        // ignore update errors
+    const getCanvasId = (canvas) => {
+      if (!canvas) {
+        return "unknown-canvas";
       }
-    }
-    // Don't log redrawn messages - they create too much noise
-  };
+      if (!canvas.__canvasWatcherId) {
+        const suffix = canvas.id ? canvas.id : `canvas-${prototype.__canvasWatcherIdCounter + 1}`;
+        canvas.__canvasWatcherId = suffix;
+        prototype.__canvasWatcherIdCounter += 1;
+      }
+      return canvas.__canvasWatcherId;
+    };
 
-  prototype.fillText = function patchedFillText(text, x, y, ...rest) {
-    handleDraw("fillText", text, x, y, this && this.canvas);
-    return originalFillText.apply(this, [text, x, y, ...rest]);
-  };
+    const handleDraw = (type, text, x, y, canvas, contextWindow) => {
+      if (!canvas) {
+        return;
+      }
+      // Get metrics prefix from the canvas's window (per-session)
+      let prefix = (contextWindow && contextWindow.__metricsPrefix) || null;
+      const windowEntry = contextWindow ? prototype.__canvasWatcherWindows.get(contextWindow) : null;
+      if (!prefix && windowEntry && windowEntry.prefix) {
+        prefix = windowEntry.prefix;
+      }
+      if (!prefix && contextWindow) {
+        prefix = metricsPrefixFromUrl(contextWindow.location && contextWindow.location.href, null);
+      }
+      if (!prefix && windowEntry && windowEntry.canvasNameMap && windowEntry.canvasNameMap.__url) {
+        prefix = metricsPrefixFromUrl(windowEntry.canvasNameMap.__url, null);
+      }
 
-  prototype.strokeText = function patchedStrokeText(text, x, y, ...rest) {
-    handleDraw("strokeText", text, x, y, this && this.canvas);
-    return originalStrokeText.apply(this, [text, x, y, ...rest]);
-  };
+      // Debug: log prefix resolution (only first time)
+      if (!prefix && !prototype.__canvasWatcherPrefixWarned) {
+        prototype.__canvasWatcherPrefixWarned = true;
+        console.error("[canvas-watcher] WARNING: No prefix found for canvas draw!", {
+          hasContextWindow: !!contextWindow,
+          hasMetricsPrefix: !!(contextWindow && contextWindow.__metricsPrefix),
+          hasWindowEntry: !!windowEntry,
+          hasLocation: !!(contextWindow && contextWindow.location),
+          locationHref: contextWindow && contextWindow.location && contextWindow.location.href,
+        });
+      }
 
-  prototype.__canvasValueWatcherInstalled = true;
+      const canvasId = getCanvasId(canvas);
+      // Resolve canvas name using the map stored for this window
+      const nameMap = windowEntry && windowEntry.canvasNameMap ? windowEntry.canvasNameMap : canvasNameMap;
+      const canvasName = (nameMap && nameMap[canvasId]) || canvasId;
+      const value = text === undefined || text === null ? "" : String(text).trim();
+      // Skip empty strings to reduce noise
+      if (!value) {
+        return;
+      }
+      const px = Number.isFinite(x) ? Math.round(x) : 0;
+      const py = Number.isFinite(y) ? Math.round(y) : 0;
+      // Use prefix in the key to separate values per session
+      const key = `${prefix || 'default'}:${canvasId}:${px}:${py}`;
+      const previous = prototype.__canvasWatcherLastValues.get(key);
+      if (previous !== value) {
+        prototype.__canvasWatcherLastValues.set(key, value);
+        if (contextWindow && contextWindow.console) {
+          // Log simplified message to avoid huge console log objects
+          contextWindow.console.log(`[canvas-watcher] ${canvasName}: ${value}`);
+        }
+
+        // Update Prometheus Metric (if available)
+        try {
+          const valNum = parseFloat(String(value).replace(",", "."));
+          if (!isNaN(valNum) && typeof getGauge === "function" && typeof buildMetricName === "function") {
+            // Use 'value' as default tag to match previous behavior
+            const mName = buildMetricName(canvasName, "value", prefix);
+            getGauge(mName, `${canvasName} value`).set(valNum);
+          }
+        } catch (err) {
+          // ignore update errors
+        }
+      }
+      // Don't log redrawn messages - they create too much noise
+    };
+
+    prototype.fillText = function patchedFillText(text, x, y, ...rest) {
+      // Get window - try direct symbol first for performance
+      let contextWindow = (this && this[WINDOW_SYMBOL]) || null;
+      // Get the JSDOM element - check context symbol, canvas property, or backing canvas symbol
+      let canvasElement = (this && this[JSDOM_ELEMENT_SYMBOL]) || null;
+      if (!canvasElement && this && this.canvas) {
+        canvasElement = this.canvas[JSDOM_ELEMENT_SYMBOL] || this.canvas;
+        if (!contextWindow && this.canvas[WINDOW_SYMBOL]) {
+          contextWindow = this.canvas[WINDOW_SYMBOL];
+        }
+      }
+      if (!contextWindow && canvasElement && canvasElement.ownerDocument) {
+        contextWindow = canvasElement.ownerDocument.defaultView;
+      }
+      handleDraw("fillText", text, x, y, canvasElement, contextWindow);
+      return originalFillText.apply(this, [text, x, y, ...rest]);
+    };
+
+    prototype.strokeText = function patchedStrokeText(text, x, y, ...rest) {
+      // Get window - try direct symbol first for performance
+      let contextWindow = (this && this[WINDOW_SYMBOL]) || null;
+      // Get the JSDOM element - check context symbol, canvas property, or backing canvas symbol
+      let canvasElement = (this && this[JSDOM_ELEMENT_SYMBOL]) || null;
+      if (!canvasElement && this && this.canvas) {
+        canvasElement = this.canvas[JSDOM_ELEMENT_SYMBOL] || this.canvas;
+        if (!contextWindow && this.canvas[WINDOW_SYMBOL]) {
+          contextWindow = this.canvas[WINDOW_SYMBOL];
+        }
+      }
+      if (!contextWindow && canvasElement && canvasElement.ownerDocument) {
+        contextWindow = canvasElement.ownerDocument.defaultView;
+      }
+      handleDraw("strokeText", text, x, y, canvasElement, contextWindow);
+      return originalStrokeText.apply(this, [text, x, y, ...rest]);
+    };
+
+    prototype.__canvasValueWatcherInstalled = true;
+  }
+
   return { installed: true };
 }
 
 function installCanvasSupport(window, options = {}) {
-  const info = {
+  // Use a fresh mutable object to avoid issues when callers freeze options/info
+  const result = {
     requested: true,
     canvasModule: canvasModuleAvailable,
     glModule: glModuleAvailable,
@@ -1042,8 +1116,6 @@ function installCanvasSupport(window, options = {}) {
     webglEnabled: false,
     warnings: [],
   };
-  // Ensure the info object is mutable (avoid assigning to a frozen object)
-  const result = { ...info };
 
   if (!canvasModuleAvailable || !canvasModule || typeof canvasModule.createCanvas !== "function") {
     result.warnings.push("node-canvas module is not installed; canvas rendering disabled");
@@ -1053,6 +1125,27 @@ function installCanvasSupport(window, options = {}) {
   if (!window || !window.HTMLCanvasElement || !window.HTMLCanvasElement.prototype) {
     result.warnings.push("HTMLCanvasElement prototype is unavailable in jsdom window");
     return result;
+  }
+
+  // Store window reference for later use
+  const jsdomWindow = window;
+
+  // Make drawImage tolerant of bad inputs to avoid "Image or Canvas expected" crashes
+  const ctx2dProto = canvasModule.CanvasRenderingContext2D && canvasModule.CanvasRenderingContext2D.prototype;
+  if (ctx2dProto && !ctx2dProto.__patchedSafeDrawImage && typeof ctx2dProto.drawImage === "function") {
+    const originalDrawImage = ctx2dProto.drawImage;
+    ctx2dProto.drawImage = function safeDrawImage(img, ...rest) {
+      if (!img || typeof img !== "object") {
+        return; // ignore invalid sources
+      }
+      try {
+        return originalDrawImage.call(this, img, ...rest);
+      } catch (err) {
+        // Swallow drawImage type errors to keep jsdom session alive
+        return;
+      }
+    };
+    Object.defineProperty(ctx2dProto, "__patchedSafeDrawImage", { value: true });
   }
 
   const prototype = window.HTMLCanvasElement.prototype;
@@ -1077,6 +1170,8 @@ function installCanvasSupport(window, options = {}) {
     if (!backing) {
       backing = createCanvas(Math.max(width, 1), Math.max(height, 1));
       element[CANVAS_BACKING_SYMBOL] = backing;
+      // Store a reference to the JSDOM element on the backing canvas
+      backing[JSDOM_ELEMENT_SYMBOL] = element;
     } else if (backing.width !== width || backing.height !== height) {
       backing.width = Math.max(width, 1);
       backing.height = Math.max(height, 1);
@@ -1109,10 +1204,20 @@ function installCanvasSupport(window, options = {}) {
     if (contextType === "2d") {
       const backing = ensureBackingCanvas(this);
       const context = backing.getContext("2d", rest[0]);
-      if (context && !context.canvas) {
+      if (context) {
+        // Store reference to JSDOM element using a symbol (node-canvas context might already have .canvas)
+        context[JSDOM_ELEMENT_SYMBOL] = this;
+        // Store window reference directly for faster access
+        const win = this.ownerDocument && this.ownerDocument.defaultView;
+        if (win) {
+          context[WINDOW_SYMBOL] = win;
+          backing[WINDOW_SYMBOL] = win;
+        }
+        // Also override the canvas property to point to the JSDOM element, not the backing canvas
         Object.defineProperty(context, "canvas", {
           configurable: true,
           enumerable: false,
+          writable: true,
           value: this,
         });
       }
@@ -1121,7 +1226,7 @@ function installCanvasSupport(window, options = {}) {
     }
     if ((contextType === "webgl" || contextType === "experimental-webgl") && enableWebgl) {
       if (!glModuleAvailable || typeof glFactory !== "function") {
-        info.warnings.push("gl module is not installed; WebGL contexts disabled");
+        result.warnings.push("gl module is not installed; WebGL contexts disabled");
         return originalGetContext ? originalGetContext.call(this, type, ...rest) : null;
       }
       if (!this[WEBGL_CONTEXT_SYMBOL]) {
@@ -1223,7 +1328,7 @@ function installCanvasSupport(window, options = {}) {
     window.CanvasRenderingContext2D = dummyContext.constructor;
   }
 
-  prototype.__canvasPolyfillInstalled = info;
+  prototype.__canvasPolyfillInstalled = result;
   return result;
 }
 
@@ -1270,10 +1375,13 @@ function captureCanvasSnapshots(dom, snapshotRequests = []) {
       width: typeof node.width === "number" ? node.width : null,
       height: typeof node.height === "number" ? node.height : null,
     };
+    // Don't include dataUrl in output to prevent huge JSON responses
     if (typeof node.toDataURL === "function") {
       try {
         const mimeType = entry && entry.mimeType ? String(entry.mimeType) : "image/png";
-        snapshot.dataUrl = node.toDataURL(mimeType);
+        const dataUrl = node.toDataURL(mimeType);
+        snapshot.dataUrlLength = dataUrl.length;
+        snapshot.dataUrlNote = "Canvas snapshot available but not returned to prevent buffer overflow";
       } catch (err) {
         snapshot.error = err && err.message ? err.message : String(err);
       }
@@ -1424,6 +1532,11 @@ async function renderPagePayload(payload = {}, index = 0) {
       if (payload && payload.webVisuBinaryPath) {
         window.__payloadWebVisuBinaryPath = payload.webVisuBinaryPath;
       }
+      // Propagate metrics prefix per session to avoid cross-talk in Prometheus
+      if (payload) {
+        const fallbackPrefix = metricsPrefixFromUrl(payload.url, null);
+        window.__metricsPrefix = payload.metricsPrefix || fallbackPrefix;
+      }
 
       // Prevent crashes from invalid appendChild calls in WebVisu: ignore non-Node children
       if (window.Node && window.Node.prototype && typeof window.Node.prototype.appendChild === "function") {
@@ -1433,6 +1546,20 @@ async function renderPagePayload(payload = {}, index = 0) {
             return child;
           }
           return originalAppendChild.call(this, child);
+        };
+      }
+
+      // Prevent crashes from invalid insertBefore calls: ignore bad reference nodes
+      if (window.Node && window.Node.prototype && typeof window.Node.prototype.insertBefore === "function") {
+        const originalInsertBefore = window.Node.prototype.insertBefore;
+        window.Node.prototype.insertBefore = function patchedInsertBefore(newNode, referenceNode) {
+          if (!newNode || typeof newNode.nodeType !== "number") {
+            return newNode;
+          }
+          if (referenceNode && typeof referenceNode.nodeType !== "number") {
+            return originalInsertBefore.call(this, newNode, null);
+          }
+          return originalInsertBefore.call(this, newNode, referenceNode);
         };
       }
 
@@ -1581,7 +1708,12 @@ async function renderPagePayload(payload = {}, index = 0) {
   // Install canvas value watcher after scripts have a chance to set up contexts
   if (dom.window.__deferredCanvasWatcher) {
     const canvasNameMap = loadCanvasNameMap();
-    const watcherStatus = injectCanvasValueWatcher(dom.window, canvasNameMap);
+    // Stash URL for fallback prefix resolution in the watcher
+    if (payload && payload.url) {
+      canvasNameMap.__url = payload.url;
+    }
+    const watcherPrefix = payload.metricsPrefix || metricsPrefixFromUrl(payload.url, null);
+    const watcherStatus = injectCanvasValueWatcher(dom.window, canvasNameMap, watcherPrefix);
     if (watcherStatus.installed) {
       dom.window.console.log("[canvas-watcher] Canvas value watcher installed successfully");
     } else {
@@ -1618,41 +1750,15 @@ async function renderPagePayload(payload = {}, index = 0) {
   }
 
   const selectors = extractSelectors(dom, payload.selectors);
-  const structure = payload.returnStructure
-    ? buildStructure(dom, payload.structureOptions || {})
-    : null;
-  const searchResults = searchDom(dom, payload.searchQueries);
-  const snapshotEntries = canvasRequested
-    ? captureCanvasSnapshots(dom, payload.canvasSnapshots || [])
-    : [];
   const contextId = Object.prototype.hasOwnProperty.call(payload, "contextId")
     ? payload.contextId
     : payload.id ?? index ?? null;
+  // Don't return any data to Python - just send minimal acknowledgment
   const output = {
     contextId: contextId ?? null,
-    meta: Object.freeze({
-      url: payload.url || null,
-      fetchedAt: new Date().toISOString(),
-      selectorCount: selectors.length,
-    }),
-    items: Object.freeze(selectors),
-    structure,
-    searchResults: Object.freeze(searchResults),
-    networkRequests: Object.freeze(networkRequests.slice()),
-    consoleLogs: Object.freeze(consoleLogs.slice()),
+    status: "ok",
+    selectorCount: selectors.length
   };
-  if (canvasSupportInfo) {
-    output.canvasSupport = Object.freeze(canvasSupportInfo);
-  }
-  if (snapshotEntries.length) {
-    output.canvasSnapshots = Object.freeze(snapshotEntries);
-  }
-  if (mouseMoveInfo) {
-    output.mouseMovements = Object.freeze(mouseMoveInfo);
-  }
-  if (payload.returnDom) {
-    output.domHtml = dom.serialize();
-  }
   // Internal: Expose DOM state for persistent sessions
   Object.defineProperty(output, "_dom", { value: dom, enumerable: false });
   Object.defineProperty(output, "_virtualConsole", { value: virtualConsole, enumerable: false });
@@ -1665,10 +1771,36 @@ async function main() {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: false
+    terminal: false,
+    crlfDelay: Infinity
   });
 
-  let pageState = null;
+  // Multiple sessions share one Node process to stay memory-efficient.
+  // Each session owns its own JSDOM instance to avoid prototype sharing surprises.
+  const sessions = new Map();
+
+  async function renderAndStore(pagePayload, defaultId, indexHint = null) {
+    const contextId = pagePayload.contextId || pagePayload.id || pagePayload.url || defaultId || `page-${sessions.size + 1}`;
+    const instanceIndex = Number.isFinite(indexHint) ? indexHint : sessions.size + 1;
+    const metricsPrefix =
+      pagePayload.metricsPrefix ||
+      metricsPrefixFromUrl(pagePayload.url, null) ||
+      `jsdom${instanceIndex}`;
+    const result = await renderPagePayload({ ...pagePayload, contextId, metricsPrefix });
+
+    if (pagePayload.keepAlive) {
+      sessions.set(contextId, {
+        dom: result._dom,
+        virtualConsole: result._virtualConsole,
+        metricsPrefix,
+      });
+    }
+
+    // Ensure contextId is visible to the caller
+    result.contextId = contextId;
+    result.metricsPrefix = metricsPrefix;
+    return result;
+  }
 
   for await (const line of rl) {
     if (!line.trim()) continue;
@@ -1681,78 +1813,102 @@ async function main() {
       continue;
     }
 
-    // Support 'exit' command
     if (payload.exit) {
       process.exit(0);
     }
 
-    if (!pageState) {
-      // INITIALIZATION
+    // Normalize shorthand: allow `urls: ["http://...","http://..."]`
+    if (!payload.pages && Array.isArray(payload.urls) && payload.urls.length) {
+      payload.pages = payload.urls.map((u) => ({ url: u, keepAlive: payload.keepAlive }));
+    }
+
+    // Support initializing multiple pages at once (new JSDOM per URL)
+    if (payload.pages && Array.isArray(payload.pages) && payload.pages.length) {
       try {
-        if (payload.pages) {
-          throw new Error("Multi-page payload not supported in continuous stream mode");
+        const results = await Promise.all(
+          payload.pages.map((pagePayload, i) =>
+            renderAndStore(pagePayload || {}, `page-${i + 1}`, i + 1)
+          )
+        );
+        process.stdout.write(JSON.stringify({ pages: results }) + "\n");
+        // If none requested keepAlive, we can exit.
+        const anyKeepAlive = payload.pages.some(p => p && p.keepAlive);
+        if (!anyKeepAlive) {
+          process.exit(0);
         }
+        continue;
+      } catch (err) {
+        process.stdout.write(JSON.stringify({ error: err.message }) + "\n");
+        continue;
+      }
+    }
 
-        // This function will now return output with hidden _dom property
-        const result = await renderPagePayload(payload);
-
-        // Save state if keepAlive is requested
-        if (payload.keepAlive) {
-          pageState = {
-            dom: result._dom,
-            virtualConsole: result._virtualConsole
-          };
-        }
-
-        // Output result (Properties _dom and _virtualConsole are not enumerable)
+    // Single-page initialization (new session)
+    if (payload.url || payload.html) {
+      try {
+        const result = await renderAndStore(payload);
         process.stdout.write(JSON.stringify(result) + "\n");
 
         if (!payload.keepAlive) {
           process.exit(0);
         }
-
+        continue;
       } catch (err) {
         process.stdout.write(JSON.stringify({ error: err.message }) + "\n");
-        // If initialization fails, we probably should exit or let them try again?
-        // Let's stay alive to allow retry or inspection
+        continue;
       }
-    } else {
-      // COMMAND PROCESSING
-      try {
-        const dom = pageState.dom;
-        const output = { contextId: payload.contextId || null };
-        let actionTaken = false;
+    }
 
-        if (payload.selectors) {
-          output.items = extractSelectors(dom, payload.selectors);
-          actionTaken = true;
-        }
-
-        if (payload.searchQueries) {
-          output.searchResults = searchDom(dom, payload.searchQueries);
-          actionTaken = true;
-        }
-
-        if (payload.evaluate) {
-          executeSnippets(dom, payload.evaluate);
-          output.evaluated = true;
-          actionTaken = true;
-        }
-
-        if (payload.simulateMouseMovements) {
-          output.mouseMovements = await simulateMouseMovements(dom, payload.simulateMouseMovements);
-          actionTaken = true;
-        }
-
-        // If they just want a snapshot of the current state
-        if (!actionTaken && payload.returnStructure) {
-          output.structure = buildStructure(dom, payload.structureOptions || {});
-        }
-
-        process.stdout.write(JSON.stringify(output) + "\n");
-      } catch (err) {
-        process.stdout.write(JSON.stringify({ error: err.message }) + "\n");
+    // COMMAND PROCESSING
+    try {
+      if (!sessions.size) {
+        process.stdout.write(JSON.stringify({ error: "No active sessions. Send a payload with `url` or `pages` first." }) + "\n");
+        continue;
       }
+
+      // Pick target session
+      let contextId = payload.contextId || null;
+      if (!contextId && sessions.size === 1) {
+        contextId = Array.from(sessions.keys())[0];
+      }
+      if (!contextId || !sessions.has(contextId)) {
+        process.stdout.write(JSON.stringify({ error: "Unknown or missing contextId" }) + "\n");
+        continue;
+      }
+
+      const session = sessions.get(contextId);
+      const dom = session.dom;
+      const output = { contextId };
+      let actionTaken = false;
+
+      if (payload.selectors) {
+        output.items = extractSelectors(dom, payload.selectors);
+        actionTaken = true;
+      }
+
+      if (payload.searchQueries) {
+        output.searchResults = searchDom(dom, payload.searchQueries);
+        actionTaken = true;
+      }
+
+      if (payload.evaluate) {
+        executeSnippets(dom, payload.evaluate);
+        output.evaluated = true;
+        actionTaken = true;
+      }
+
+      if (payload.simulateMouseMovements) {
+        output.mouseMovements = await simulateMouseMovements(dom, payload.simulateMouseMovements);
+        actionTaken = true;
+      }
+
+      if (!actionTaken && payload.returnStructure) {
+        output.structure = buildStructure(dom, payload.structureOptions || {});
+      }
+
+      process.stdout.write(JSON.stringify(output) + "\n");
+    } catch (err) {
+      process.stdout.write(JSON.stringify({ error: err.message }) + "\n");
     }
   }
 }
