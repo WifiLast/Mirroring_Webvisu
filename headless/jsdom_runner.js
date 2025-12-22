@@ -537,6 +537,9 @@ function instrumentXHR(dom, logEntries, nextId) {
     return;
   }
 
+  const MAX_NATIVE_RETRIES = 5;
+  const RETRY_BASE_MS = 2000;
+
   // Helper to make binary requests using native Node.js http/https
   const makeNativeBinaryRequest = async (url, body) => {
     const URL = require('url');
@@ -730,83 +733,104 @@ function instrumentXHR(dom, logEntries, nextId) {
             ? this._logEntry.url
             : new URL(this._logEntry.url, dom.window.location.href).href;
 
-          makeNativeBinaryRequest(fullUrl, bodyBuffer || bodyString)
-            .then((result) => {
-              this._nativeRequestPending = false;
+          const attemptNativeBinary = (attempt) => {
+            this._nativeRequestPending = true;
+            makeNativeBinaryRequest(fullUrl, bodyBuffer || bodyString)
+              .then((result) => {
+                this._nativeRequestPending = false;
 
-              // Populate XHR object with response
-              Object.defineProperty(this, 'status', { value: result.status, writable: false, configurable: true });
-              Object.defineProperty(this, 'statusText', { value: result.statusText, writable: false, configurable: true });
-              Object.defineProperty(this, 'responseURL', { value: fullUrl, writable: false, configurable: true });
+                // Populate XHR object with response
+                Object.defineProperty(this, 'status', { value: result.status, writable: false, configurable: true });
+                Object.defineProperty(this, 'statusText', { value: result.statusText, writable: false, configurable: true });
+                Object.defineProperty(this, 'responseURL', { value: fullUrl, writable: false, configurable: true });
 
-              // Convert Buffer to ArrayBuffer for proper WebVisu handling
-              const arrayBuffer = result.data.buffer.slice(result.data.byteOffset, result.data.byteOffset + result.data.byteLength);
-              Object.defineProperty(this, 'response', { value: arrayBuffer, writable: false, configurable: true });
-              Object.defineProperty(this, 'responseType', { value: 'arraybuffer', writable: false, configurable: true });
+                // Convert Buffer to ArrayBuffer for proper WebVisu handling
+                const arrayBuffer = result.data.buffer.slice(result.data.byteOffset, result.data.byteOffset + result.data.byteLength);
+                Object.defineProperty(this, 'response', { value: arrayBuffer, writable: false, configurable: true });
+                Object.defineProperty(this, 'responseType', { value: 'arraybuffer', writable: false, configurable: true });
 
-              // Log the native request
-              const entry = {
-                ...this._logEntry,
-                status: result.status,
-                statusText: result.statusText,
-                responseURL: fullUrl,
-                responseType: 'arraybuffer',
-                contentType: result.headers['content-type'],
-              };
-              logEntries.push(Object.freeze(entry));
-
-              // Debug logging for response
-              process.stderr.write(
-                JSON.stringify({
-                  type: "debug",
-                  topic: "webvisu-recv",
-                  url: fullUrl,
+                // Log the native request
+                const entry = {
+                  ...this._logEntry,
                   status: result.status,
-                  length: result.data.length,
-                  hex: result.data.subarray(0, 256).toString("hex"),
-                }) + "\n"
-              );
+                  statusText: result.statusText,
+                  responseURL: fullUrl,
+                  responseType: 'arraybuffer',
+                  contentType: result.headers['content-type'],
+                };
+                logEntries.push(Object.freeze(entry));
 
-              // Trigger XHR state changes and events in proper order
-              // readyState 2 = HEADERS_RECEIVED
-              Object.defineProperty(this, 'readyState', { value: 2, writable: false, configurable: true });
-              this.dispatchEvent(new dom.window.Event('readystatechange'));
+                // Debug logging for response
+                process.stderr.write(
+                  JSON.stringify({
+                    type: "debug",
+                    topic: "webvisu-recv",
+                    url: fullUrl,
+                    status: result.status,
+                    length: result.data.length,
+                    hex: result.data.subarray(0, 256).toString("hex"),
+                  }) + "\n"
+                );
 
-              // readyState 3 = LOADING
-              Object.defineProperty(this, 'readyState', { value: 3, writable: false, configurable: true });
-              this.dispatchEvent(new dom.window.Event('readystatechange'));
+                // Trigger XHR state changes and events in proper order
+                // readyState 2 = HEADERS_RECEIVED
+                Object.defineProperty(this, 'readyState', { value: 2, writable: false, configurable: true });
+                this.dispatchEvent(new dom.window.Event('readystatechange'));
 
-              // readyState 4 = DONE
-              Object.defineProperty(this, 'readyState', { value: 4, writable: false, configurable: true });
-              this.dispatchEvent(new dom.window.Event('readystatechange'));
+                // readyState 3 = LOADING
+                Object.defineProperty(this, 'readyState', { value: 3, writable: false, configurable: true });
+                this.dispatchEvent(new dom.window.Event('readystatechange'));
 
-              // Trigger load events
-              this.dispatchEvent(new dom.window.Event('load'));
-              this.dispatchEvent(new dom.window.Event('loadend'));
-            })
-            .catch((err) => {
-              this._nativeRequestPending = false;
+                // readyState 4 = DONE
+                Object.defineProperty(this, 'readyState', { value: 4, writable: false, configurable: true });
+                this.dispatchEvent(new dom.window.Event('readystatechange'));
 
-              // Log error
-              const entry = {
-                ...this._logEntry,
-                error: err.message,
-              };
-              logEntries.push(Object.freeze(entry));
+                // Trigger load events
+                this.dispatchEvent(new dom.window.Event('load'));
+                this.dispatchEvent(new dom.window.Event('loadend'));
+              })
+              .catch((err) => {
+                if (attempt >= MAX_NATIVE_RETRIES) {
+                  this._nativeRequestPending = false;
+                  // Log error
+                  const entry = {
+                    ...this._logEntry,
+                    error: err.message,
+                  };
+                  logEntries.push(Object.freeze(entry));
 
-              process.stderr.write(
-                JSON.stringify({
-                  type: "debug",
-                  topic: "webvisu-error",
-                  url: fullUrl,
-                  error: err.message,
-                }) + "\n"
-              );
+                  process.stderr.write(
+                    JSON.stringify({
+                      type: "debug",
+                      topic: "webvisu-error",
+                      url: fullUrl,
+                      error: err.message,
+                    }) + "\n"
+                  );
 
-              // Trigger error event
-              this.dispatchEvent(new dom.window.Event('error'));
-              this.dispatchEvent(new dom.window.Event('loadend'));
-            });
+                  // Trigger error event
+                  this.dispatchEvent(new dom.window.Event('error'));
+                  this.dispatchEvent(new dom.window.Event('loadend'));
+                  return;
+                }
+
+                const delay = RETRY_BASE_MS * Math.pow(2, attempt);
+                process.stderr.write(
+                  JSON.stringify({
+                    type: "debug",
+                    topic: "webvisu-retry",
+                    url: fullUrl,
+                    attempt: attempt + 1,
+                    delayMs: delay,
+                    error: err.message,
+                  }) + "\n"
+                );
+                setTimeout(() => attemptNativeBinary(attempt + 1), delay);
+              });
+          };
+
+          // Kick off retry loop
+          attemptNativeBinary(0);
 
           return; // Don't call super.send()
         }

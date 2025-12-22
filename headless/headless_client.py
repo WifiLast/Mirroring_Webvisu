@@ -319,25 +319,25 @@ async def run_multi(urls: Iterable[str], return_dom: bool = False, once: bool = 
         stderr_task = asyncio.create_task(_process_stderr(client, "multi"))
 
         try:
-            sys.stderr.write("[multi] Loading pages...\n")
+            #sys.stderr.write("[multi] Loading pages...\n")
             await client.send_command({"pages": pages_payload})
             response = await client.read_response()
             page_results = response.get("pages") if isinstance(response, dict) else None
             if not page_results:
-                sys.stderr.write("[multi] No pages returned; aborting.\n")
+                #sys.stderr.write("[multi] No pages returned; aborting.\n")
                 return
 
             for res in page_results:
                 ctx = res.get("contextId")
-                sys.stderr.write(f"[{ctx}] Loaded - status: {res.get('status', 'unknown')}\n")
+                #sys.stderr.write(f"[{ctx}] Loaded - status: {res.get('status', 'unknown')}\n")
 
             if once:
                 # Don't print response to avoid large output
-                sys.stderr.write(f"[multi] All {len(page_results)} pages loaded successfully\n")
+                #sys.stderr.write(f"[multi] All {len(page_results)} pages loaded successfully\n")
                 return
 
             # In keep-alive mode, only print summary
-            sys.stderr.write(f"[multi] All {len(page_results)} pages loaded successfully\n")
+            #sys.stderr.write(f"[multi] All {len(page_results)} pages loaded successfully\n")
 
             keep_alive_tasks = [
                 asyncio.create_task(_keep_alive_pinger(client, prefix=ctx, context_id=ctx))
@@ -345,7 +345,7 @@ async def run_multi(urls: Iterable[str], return_dom: bool = False, once: bool = 
             ]
 
             stdout_task = asyncio.create_task(_drain_stdout(client, "multi"))
-            sys.stderr.write("[multi] Press Ctrl+C to stop...\n")
+            #sys.stderr.write("[multi] Press Ctrl+C to stop...\n")
             while True:
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
