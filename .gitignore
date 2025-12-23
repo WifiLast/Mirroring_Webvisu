@@ -2,3 +2,4 @@
 /eCockpit
 /headless/node_modules
 /.claude
+/browser_version/__pycache__

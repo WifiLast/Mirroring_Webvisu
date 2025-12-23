@@ -1,21 +1,133 @@
 {
-  "http://192.168.1.200:8080/webvisu/webvisu.htm": {
+  "https://192.168.1.17/webvisu/webvisu.htm": {
     "canvases": {
-      "ok": {
-        "canvasId": "cdsCanvas_1_12_30",
-        "canvasName": "ok",
-        "lastSeen": 1765986844.819558,
-        "pageUrl": "http://192.168.1.200:8080/webvisu/webvisu.htm",
-        "tags": [
+      "foreground": {
+        "canvasId": "foreground",
+        "canvasName": "foreground",
+        "pageUrl": "https://192.168.1.17/webvisu/webvisu.htm",
+        "trackedPositions": [
           {
-            "tag": "value",
-            "value": "19.846"
+            "x": 171,
+            "y": 131,
+            "tag": null
           },
           {
-            "tag": "value",
-            "value": "19.846"
+            "x": 171,
+            "y": 157,
+            "tag": null
+          },
+          {
+            "x": 171,
+            "y": 184,
+            "tag": null
+          },
+          {
+            "x": 171,
+            "y": 210,
+            "tag": null
+          },
+          {
+            "x": 171,
+            "y": 342,
+            "tag": null
+          },
+          {
+            "x": 374,
+            "y": 130,
+            "tag": null
+          },
+          {
+            "x": 374,
+            "y": 156,
+            "tag": null
+          },
+          {
+            "x": 693,
+            "y": 130,
+            "tag": null
+          },
+          {
+            "x": 693,
+            "y": 183,
+            "tag": null
+          },
+          {
+            "x": 693,
+            "y": 104,
+            "tag": "RH001"
+          },
+          {
+            "x": 693,
+            "y": 157,
+            "tag": null
+          },
+          {
+            "x": 895,
+            "y": 130,
+            "tag": "DBF001"
+          },
+          {
+            "x": 895,
+            "y": 236,
+            "tag": "VOT001"
+          },
+          {
+            "x": 895,
+            "y": 210,
+            "tag": null
+          },
+          {
+            "x": 895,
+            "y": 104,
+            "tag": "PT001"
+          },
+          {
+            "x": 171,
+            "y": 236,
+            "tag": null
+          },
+          {
+            "x": 171,
+            "y": 263,
+            "tag": "FLT002"
+          },
+          {
+            "x": 172,
+            "y": 450,
+            "tag": null
+          },
+          {
+            "x": 173,
+            "y": 398,
+            "tag": "RH007"
+          },
+          {
+            "x": 529,
+            "y": 130,
+            "tag": null
+          },
+          {
+            "x": 653,
+            "y": 617,
+            "tag": null
+          },
+          {
+            "x": 653,
+            "y": 598,
+            "tag": null
+          },
+          {
+            "x": 694,
+            "y": 598,
+            "tag": null
+          },
+          {
+            "x": 694,
+            "y": 617,
+            "tag": null
           }
-        ]
+        ],
+        "lastSeen": 1766495924.184449
       }
     }
   }

@@ -36,10 +36,12 @@
     eventUrl: GM_getValue("eventUrl", defaults.eventUrl),
     pollingMs: GM_getValue("pollingMs", defaults.pollingMs),
     sendSnapshot: GM_getValue("sendSnapshot", defaults.sendSnapshot),
+    showOverlays: GM_getValue("showOverlays", true),
     canvasNames: GM_getValue("canvasNames", {}),
     watchers: [],
     selecting: false,
-    hovered: null
+    hovered: null,
+    storedConfig: null  // Stored config from backend for checking watched status
   };
 
   const updateQueue = [];
@@ -86,6 +88,9 @@
     canvasTextDraws: [],
     valueToCanvasMap: new Map(),
     tagToCanvasMap: new Map(),
+    currentZoom: window.devicePixelRatio,
+    lastInnerWidth: window.innerWidth,
+    lastOuterWidth: window.outerWidth,
     startTracking: function() {
       var tracker = this;
       var originalFillText = CanvasRenderingContext2D.prototype.fillText;
@@ -101,7 +106,64 @@
         return originalStrokeText.apply(this, arguments);
       };
 
+      // Monitor zoom/scale changes and clear values when zoom changes
+      window.addEventListener('resize', function() {
+        tracker.checkZoomChange();
+      });
+
+      // Also monitor with visualViewport API if available (more reliable for zoom detection)
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', function() {
+          tracker.checkZoomChange();
+        });
+      }
+
+      // Use MutationObserver to detect zoom changes via CSS transform
+      var lastZoomLevel = tracker.getZoomLevel();
+      setInterval(function() {
+        var currentZoomLevel = tracker.getZoomLevel();
+        if (Math.abs(currentZoomLevel - lastZoomLevel) > 0.01) {
+          console.log('[spsValueTracker] Zoom changed from', lastZoomLevel, 'to', currentZoomLevel, '- clearing all tracked values');
+          tracker.clearAllValues();
+          lastZoomLevel = currentZoomLevel;
+        }
+      }, 500);
+
       console.log('[spsValueTracker] Canvas value tracking started');
+    },
+    getZoomLevel: function() {
+      // Multiple methods to detect zoom level
+      var devicePixelRatio = window.devicePixelRatio || 1;
+
+      // Method 1: Using visualViewport (most reliable for page zoom)
+      if (window.visualViewport) {
+        return window.visualViewport.scale;
+      }
+
+      // Method 2: Using devicePixelRatio
+      return devicePixelRatio;
+    },
+    checkZoomChange: function() {
+      var newZoom = window.devicePixelRatio;
+      var newInnerWidth = window.innerWidth;
+      var newOuterWidth = window.outerWidth;
+
+      // Check if devicePixelRatio changed OR if window dimensions changed significantly (indicating zoom)
+      var dimensionChanged = Math.abs(newInnerWidth - this.lastInnerWidth) > 50;
+
+      if (newZoom !== this.currentZoom || dimensionChanged) {
+        console.log('[spsValueTracker] Zoom/resize detected - clearing all tracked values');
+        this.clearAllValues();
+        this.currentZoom = newZoom;
+        this.lastInnerWidth = newInnerWidth;
+        this.lastOuterWidth = newOuterWidth;
+      }
+    },
+    clearAllValues: function() {
+      this.canvasTextDraws = [];
+      this.valueToCanvasMap.clear();
+      this.tagToCanvasMap.clear();
+      console.log('[spsValueTracker] All tracked values cleared');
     },
     recordCanvasDraw: function(canvas, text, x, y, type) {
       var timestamp = Date.now();
@@ -129,12 +191,21 @@
       var isNumeric = numericMatch !== null;
       var cleanValue = isNumeric ? numericMatch[1] : null;
 
-      if (isNumeric && cleanValue && this.lastReceivedValues.indexOf(cleanValue) !== -1) {
+      // Track numeric values if:
+      // 1. They match a value we received from the server (this.lastReceivedValues), OR
+      // 2. We have no received values yet (old visu fallback - track all numeric values)
+      var shouldTrack = isNumeric && cleanValue && (
+        this.lastReceivedValues.indexOf(cleanValue) !== -1 ||
+        this.lastReceivedValues.length === 0
+      );
+
+      if (shouldTrack) {
         var key = canvasId + ':' + draw.x + ':' + draw.y;
         console.log('[spsValueTracker] Numeric value drawn:', textStr, '(clean:', cleanValue, ') at', key, '- searching for label...');
 
         var nearbyLabel = this.findNearbyLabel(canvasId, draw.x, draw.y, timestamp);
 
+        // Update or add the value - this will replace old values at the same location
         this.valueToCanvasMap.set(key, {
           value: textStr,
           label: nearbyLabel,
@@ -148,8 +219,23 @@
         }
       }
 
+      // Clean up old draws to prevent memory bloat
       if (this.canvasTextDraws.length > 200) {
         this.canvasTextDraws.shift();
+      }
+
+      // Clean up old valueToCanvasMap entries (older than 60 seconds)
+      // This cleanup is conservative to ensure values persist long enough to be captured
+      var now = Date.now();
+      var maxAge = 60000; // 60 seconds
+      var keysToDelete = [];
+      this.valueToCanvasMap.forEach(function(data, key) {
+        if (now - data.timestamp > maxAge) {
+          keysToDelete.push(key);
+        }
+      });
+      for (var i = 0; i < keysToDelete.length; i++) {
+        this.valueToCanvasMap.delete(keysToDelete[i]);
       }
     },
     findNearbyLabel: function(canvasId, x, y, timestamp) {
@@ -427,6 +513,8 @@
     const canvasId = canvas.id || 'canvas-' + Array.from(document.querySelectorAll('canvas')).indexOf(canvas);
     const values = [];
 
+    console.log('[extractSPSValues] Map size:', pageWindow.spsValueTracker.valueToCanvasMap.size, 'for canvas:', canvasId);
+
     // Helper function to check if a canvas ID matches (handles WebVisu's dynamic IDs)
     const canvasIdMatches = (keyCanvasId) => {
       // Exact match
@@ -542,11 +630,42 @@
   }
 
   function isCanvasWatched(canvas, region) {
-    return state.watchers.some(w => {
+    // Check if currently being watched in memory
+    const inMemory = state.watchers.some(w => {
       const canvasMatch = w.canvas === canvas || (w.canvas && canvas && w.canvas.id && w.canvas.id === canvas.id);
       if (!canvasMatch) return false;
       return sameRegion(w.region, region || null);
     });
+
+    if (inMemory) return true;
+
+    // Also check stored config (for cases where watchers haven't been restored yet)
+    if (state.storedConfig && canvas && canvas.id) {
+      const stored = state.storedConfig.find(c => c.canvasId === canvas.id);
+      if (!stored) return false;
+
+      const trackedPositions = stored.trackedPositions || [];
+      if (!region) {
+        // Checking if full canvas is watched - true if no tracked positions
+        return trackedPositions.length === 0;
+      }
+
+      // Check if this specific region matches any tracked position
+      return trackedPositions.some(pos => {
+        // Calculate the region that would be created for this position
+        const padX = 80;
+        const padY = 30;
+        const posRegion = {
+          x: Math.max(0, Math.floor(pos.x - padX / 2)),
+          y: Math.max(0, Math.floor(pos.y - padY / 2)),
+          w: Math.min(canvas.width, Math.floor(padX)),
+          h: Math.min(canvas.height, Math.floor(padY))
+        };
+        return sameRegion(posRegion, region);
+      });
+    }
+
+    return false;
   }
 
   function findCanvasForStored(stored) {
@@ -1029,6 +1148,129 @@
     document.addEventListener("keydown", onKey, true);
   }
 
+  function createRegionOverlay(canvas, region, watcher) {
+    // Create a visual overlay to highlight the watched region
+    if (!state.showOverlays) return null;
+
+    const rect = canvas.getBoundingClientRect();
+    const overlay = document.createElement("div");
+    overlay.className = "wv-region-overlay";
+    overlay.style.cssText = `
+      position: fixed;
+      left: ${rect.left + region.x}px;
+      top: ${rect.top + region.y}px;
+      width: ${region.w}px;
+      height: ${region.h}px;
+      border: 2px solid rgba(255,87,34,0.9);
+      background: rgba(255,87,34,0.1);
+      pointer-events: auto;
+      cursor: pointer;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `;
+    overlay.dataset.canvasId = canvas.id;
+    overlay.dataset.region = JSON.stringify({x: region.x, y: region.y, w: region.w, h: region.h});
+
+    // Add label display if there's a label
+    if (watcher && watcher.label) {
+      const label = document.createElement("div");
+      label.className = "wv-region-label";
+      label.textContent = watcher.label;
+      label.style.cssText = `
+        background: rgba(255,87,34,0.9);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: bold;
+        pointer-events: none;
+      `;
+      overlay.appendChild(label);
+    }
+
+    // Click handler to name/rename the region
+    overlay.onclick = (e) => {
+      e.stopPropagation();
+      const currentLabel = watcher ? watcher.label : null;
+      const newLabel = prompt("Enter a name for this region (used as metric label/tag):", currentLabel || "");
+
+      if (newLabel !== null) {  // null means cancelled
+        const trimmed = newLabel.trim();
+        if (watcher) {
+          watcher.label = trimmed || null;
+
+          // Update the label display
+          const labelDiv = overlay.querySelector('.wv-region-label');
+          if (trimmed) {
+            if (labelDiv) {
+              labelDiv.textContent = trimmed;
+            } else {
+              const newLabelDiv = document.createElement("div");
+              newLabelDiv.className = "wv-region-label";
+              newLabelDiv.textContent = trimmed;
+              newLabelDiv.style.cssText = `
+                background: rgba(255,87,34,0.9);
+                color: white;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-size: 11px;
+                font-weight: bold;
+                pointer-events: none;
+              `;
+              overlay.appendChild(newLabelDiv);
+            }
+          } else if (labelDiv) {
+            labelDiv.remove();
+          }
+
+          console.log(`[Canvas Watcher] Region label updated to: ${trimmed || '(none)'}`);
+
+          // Send the label update to the backend
+          sendLabelUpdate(canvas.id, region, trimmed || null);
+
+          // Force an immediate update to send the new label
+          watcher.lastHash = null;
+          tickWatcher(watcher);
+        }
+      }
+    };
+
+    // Hover effect
+    overlay.onmouseenter = () => {
+      overlay.style.background = "rgba(255,87,34,0.2)";
+      overlay.style.borderWidth = "3px";
+    };
+    overlay.onmouseleave = () => {
+      overlay.style.background = "rgba(255,87,34,0.1)";
+      overlay.style.borderWidth = "2px";
+    };
+
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+
+  function updateRegionOverlays() {
+    // Update positions of all region overlays (in case canvas moved)
+    document.querySelectorAll('.wv-region-overlay').forEach(overlay => {
+      const canvasId = overlay.dataset.canvasId;
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) {
+        overlay.remove();
+        return;
+      }
+      const region = JSON.parse(overlay.dataset.region);
+      const rect = canvas.getBoundingClientRect();
+      overlay.style.left = `${rect.left + region.x}px`;
+      overlay.style.top = `${rect.top + region.y}px`;
+    });
+  }
+
+  // Update overlays on scroll/resize
+  window.addEventListener('scroll', updateRegionOverlays, true);
+  window.addEventListener('resize', updateRegionOverlays);
+
   function addWatcher(canvas, region, label) {
     const id = canvas.id || `watched-canvas-${Date.now()}`;
     canvas.id = id;
@@ -1047,8 +1289,15 @@
       region: region || null,
       label: label || null,
       lastHash: null,
-      interval: null
+      interval: null,
+      overlay: null
     };
+
+    // Create visual overlay for region watchers
+    if (region) {
+      watcher.overlay = createRegionOverlay(canvas, region, watcher);
+    }
+
     state.watchers.push(watcher);
     log("Watching canvas:", id, "Polling:", state.pollingMs, "ms", region ? `Region: ${region.x},${region.y} ${region.w}x${region.h}` : "Full canvas");
 
@@ -1067,6 +1316,9 @@
         const watcher = state.watchers[idx];
         if (watcher.interval) clearInterval(watcher.interval);
         if (watcher.canvas) watcher.canvas.classList.remove(SELECTED_CLASS);
+        if (watcher.overlay && watcher.overlay.parentNode) {
+          watcher.overlay.parentNode.removeChild(watcher.overlay);
+        }
         state.watchers.splice(idx, 1);
         log("Stopped watching canvas:", watcher.canvas.id);
       }
@@ -1074,6 +1326,9 @@
       state.watchers.forEach(watcher => {
         if (watcher.interval) clearInterval(watcher.interval);
         if (watcher.canvas) watcher.canvas.classList.remove(SELECTED_CLASS);
+        if (watcher.overlay && watcher.overlay.parentNode) {
+          watcher.overlay.parentNode.removeChild(watcher.overlay);
+        }
       });
       state.watchers = [];
       log("Stopped watching all canvases");
@@ -1134,12 +1389,33 @@
       canvas.setAttribute("data-name", canvasName);
     }
 
+    // Extract IP from URL for metric prefix
+    let ipPrefix = "unknown";
+    try {
+      const url = new URL(window.location.href);
+      const hostname = url.hostname;
+      // Check if hostname is an IP address (v4 or v6)
+      if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
+        // IPv4 - replace dots with underscores for valid metric name
+        ipPrefix = hostname.replace(/\./g, '_');
+      } else if (/^\[?[0-9a-fA-F:]+\]?$/.test(hostname)) {
+        // IPv6 - replace colons with underscores
+        ipPrefix = hostname.replace(/[\[\]:]/g, '_');
+      } else {
+        // Hostname - sanitize for metric name
+        ipPrefix = hostname.replace(/[^a-zA-Z0-9]/g, '_');
+      }
+    } catch (e) {
+      console.warn("[Canvas Watcher] Could not extract IP from URL:", e);
+    }
+
     const payload = {
       canvasId: canvas.id,
       width: region ? region.w : canvas.width,
       height: region ? region.h : canvas.height,
       canvasName,
       pageUrl: window.location.href,
+      ipPrefix,
       hash,
       timestamp: new Date().toISOString()
     };
@@ -1218,8 +1494,41 @@
     });
   }
 
+  function sendLabelUpdate(canvasId, region, label) {
+    const url = getApiUrl("/api/update-label");
+    const payload = {
+      canvasId: canvasId,
+      region: region,
+      label: label,
+      pageUrl: window.location.href,
+      timestamp: new Date().toISOString()
+    };
+
+    console.log("[Canvas Watcher] Sending label update to backend:", payload);
+
+    GM_xmlhttpRequest({
+      method: "POST",
+      url,
+      headers: {
+        "Content-Type": "application/json"
+      },
+      data: JSON.stringify(payload),
+      onload: function(response) {
+        if (response.status >= 200 && response.status < 300) {
+          console.log("[Canvas Watcher] Label update successful");
+        } else {
+          console.warn("[Canvas Watcher] Failed to update label:", response.status, response.statusText);
+        }
+      },
+      onerror: function(err) {
+        console.warn("[Canvas Watcher] Failed to send label update:", err);
+      }
+    });
+  }
+
   function restoreWatchersFromBackend() {
     const url = getApiUrl(`/api/metrics?page=${encodeURIComponent(window.location.href)}`);
+    console.log("[Canvas Watcher] Restoring watchers from backend:", url);
     GM_xmlhttpRequest({
       method: "GET",
       url,
@@ -1228,17 +1537,55 @@
           try {
             const data = JSON.parse(response.responseText);
             const canvases = data.canvases || [];
+            console.log(`[Canvas Watcher] Found ${canvases.length} canvases to restore`);
+
+            // Store config for checking watched status in picker
+            state.storedConfig = canvases;
+
             canvases.forEach(stored => {
               const target = findCanvasForStored(stored);
               if (target) {
+                console.log(`[Canvas Watcher] Restoring watcher for canvas: ${stored.canvasId}`);
                 if (stored.canvasName) saveCanvasName(target, stored.canvasName);
-                addWatcher(target, null);
+
+                // Check if we have tracked positions (old visu mode with specific values)
+                const trackedPositions = stored.trackedPositions || [];
+                if (trackedPositions.length > 0) {
+                  console.log(`[Canvas Watcher] Restoring ${trackedPositions.length} tracked positions`);
+                  // Restore watchers for each tracked position
+                  trackedPositions.forEach(pos => {
+                    const padX = 80;
+                    const padY = 30;
+                    const region = {
+                      x: Math.max(0, Math.floor(pos.x - padX / 2)),
+                      y: Math.max(0, Math.floor(pos.y - padY / 2)),
+                      w: Math.min(target.width, Math.floor(padX)),
+                      h: Math.min(target.height, Math.floor(padY)),
+                      label: pos.tag || null,
+                      value: null
+                    };
+                    addWatcher(target, region, pos.tag || null);
+                  });
+                } else {
+                  // Watch the full canvas - values will be tracked automatically
+                  addWatcher(target, null);
+                }
+
+                // Apply selection class immediately for visual feedback
+                target.classList.add(SELECTED_CLASS);
+              } else {
+                console.warn(`[Canvas Watcher] Could not find canvas for stored config:`, stored);
               }
             });
           } catch (err) {
             warn("Failed to parse metrics config", err);
           }
+        } else {
+          console.log(`[Canvas Watcher] No stored config found (${response.status})`);
         }
+      },
+      onerror: function(err) {
+        console.log("[Canvas Watcher] Could not reach backend to restore watchers");
       }
     });
   }
@@ -1271,6 +1618,29 @@
     state.sendSnapshot = !state.sendSnapshot;
     GM_setValue("sendSnapshot", state.sendSnapshot);
     alert("Send snapshot payload: " + state.sendSnapshot);
+  }
+
+  function toggleOverlays() {
+    state.showOverlays = !state.showOverlays;
+    GM_setValue("showOverlays", state.showOverlays);
+
+    // Show or hide existing overlays
+    if (state.showOverlays) {
+      // Recreate overlays for all region watchers
+      state.watchers.forEach(watcher => {
+        if (watcher.region && !watcher.overlay && watcher.canvas) {
+          watcher.overlay = createRegionOverlay(watcher.canvas, watcher.region, watcher);
+        }
+      });
+    } else {
+      // Hide all overlays
+      document.querySelectorAll('.wv-region-overlay').forEach(overlay => overlay.remove());
+      state.watchers.forEach(watcher => {
+        watcher.overlay = null;
+      });
+    }
+
+    alert("Show region overlays: " + state.showOverlays);
   }
 
   function listWatchers() {
@@ -1617,11 +1987,31 @@
   GM_registerMenuCommand("Set backend URL", setBackendUrl);
   GM_registerMenuCommand("Set polling interval", setPolling);
   GM_registerMenuCommand("Toggle send snapshot", toggleSnapshot);
+  GM_registerMenuCommand("Toggle region overlays", toggleOverlays);
+
+  // Restore watchers with retry logic to handle delayed canvas creation
+  function tryRestoreWatchers(attempts = 0) {
+    const maxAttempts = 5;
+    const delay = 1000; // 1 second between attempts
+
+    console.log(`[Canvas Watcher] Attempting to restore watchers (attempt ${attempts + 1}/${maxAttempts})`);
+
+    // Check if canvases exist
+    const canvases = document.querySelectorAll("canvas");
+    if (canvases.length === 0 && attempts < maxAttempts - 1) {
+      console.log(`[Canvas Watcher] No canvases found yet, will retry in ${delay}ms`);
+      setTimeout(() => tryRestoreWatchers(attempts + 1), delay);
+      return;
+    }
+
+    console.log(`[Canvas Watcher] Found ${canvases.length} canvas elements, restoring watchers`);
+    restoreWatchersFromBackend();
+  }
 
   if (document.readyState === "complete" || document.readyState === "interactive") {
-    setTimeout(restoreWatchersFromBackend, 500);
+    setTimeout(() => tryRestoreWatchers(), 1000);
   } else {
-    document.addEventListener("DOMContentLoaded", () => setTimeout(restoreWatchersFromBackend, 500));
+    document.addEventListener("DOMContentLoaded", () => setTimeout(() => tryRestoreWatchers(), 1000));
   }
 
   log("Canvas Watcher loaded. Use Tampermonkey menu to select a canvas.");

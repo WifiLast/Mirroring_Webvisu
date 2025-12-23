@@ -1,6 +1,6 @@
+import asyncio
 import json
 import logging
-import os
 import re
 import time
 from pathlib import Path
@@ -21,6 +21,7 @@ PROM_PORT = int(8077)
 STORE_PATH = Path(__file__).parent / "metrics_store.json"
 # We create gauges dynamically per metric name (using default registry like opc_PLS.py)
 gauges: Dict[str, Gauge] = {}
+store_lock = asyncio.Lock()
 
 
 def clear_registry(prefix: str = "webvisu") -> None:
@@ -54,10 +55,14 @@ def sanitize_name(name: str, default: str = "value") -> str:
     return clean.lower()
 
 
-def build_metric_name(canvas_name: str, tag: str) -> str:
+def build_metric_name(ip_prefix: str, canvas_name: str, tag: str) -> str:
+    """Build metric name with IP prefix to distinguish different WebVisu instances"""
     tag_part = sanitize_name(tag, "value")
     canvas_part = sanitize_name(canvas_name, "canvas")
-    return f"{canvas_part}_{tag_part}" if canvas_part else tag_part
+    ip_part = sanitize_name(ip_prefix, "unknown") if ip_prefix else "unknown"
+
+    # Format: {ip}_{canvas}_{tag}
+    return f"{ip_part}_{canvas_part}_{tag_part}"
 
 
 def get_gauge(metric: str, description: str = "WebVisu value"):
@@ -68,75 +73,117 @@ def get_gauge(metric: str, description: str = "WebVisu value"):
     return gauges[metric]
 
 
-def load_store() -> Dict[str, Any]:
+async def _read_store_file() -> Dict[str, Any]:
     if STORE_PATH.exists():
         try:
-            return json.loads(STORE_PATH.read_text())
+            content = await asyncio.to_thread(STORE_PATH.read_text)
+            return json.loads(content)
         except Exception as exc:
             logger.warning("Failed to read metrics store: %s", exc)
     return {}
 
 
-def save_store(data: Dict[str, Any]) -> None:
+async def _write_store_file(data: Dict[str, Any]) -> None:
     try:
-        STORE_PATH.write_text(json.dumps(data, indent=2))
+        serialized = json.dumps(data, indent=2)
+        await asyncio.to_thread(STORE_PATH.write_text, serialized)
     except Exception as exc:
         logger.error("Failed to persist metrics store: %s", exc)
 
 
-def record_metrics(page_url: str, canvas_name: str, canvas_id: str, sps_values: Any) -> None:
+async def load_store() -> Dict[str, Any]:
+    async with store_lock:
+        return await _read_store_file()
+
+
+async def save_store(data: Dict[str, Any]) -> None:
+    async with store_lock:
+        await _write_store_file(data)
+
+
+async def record_metrics(page_url: str, canvas_name: str, canvas_id: str, sps_values: Any) -> None:
+    """Record canvas config in the metrics store - values only go to Prometheus"""
     page = page_url or "unknown"
-    store = load_store()
-    page_entry = store.setdefault(page, {"canvases": {}})
-    key = canvas_name or canvas_id or f"canvas_{len(page_entry['canvases']) + 1}"
+    async with store_lock:
+        store = await _read_store_file()
+        page_entry = store.setdefault(page, {"canvases": {}})
+        key = canvas_name or canvas_id or f"canvas_{len(page_entry['canvases']) + 1}"
 
-    tags = []
-    for entry in sps_values or []:
-        tag = entry.get("tag") or entry.get("label") or "value"
-        val = entry.get("value") or entry.get("val") or entry
-        tags.append({"tag": tag, "value": val})
+        # Store config only - keep existing config if present, just update lastSeen
+        if key not in page_entry["canvases"]:
+            page_entry["canvases"][key] = {
+                "canvasId": canvas_id,
+                "canvasName": canvas_name,
+                "pageUrl": page_url,
+            }
 
-    page_entry["canvases"][key] = {
-        "canvasId": canvas_id,
-        "canvasName": canvas_name,
-        "lastSeen": time.time(),
-        "pageUrl": page_url,
-        "tags": tags,
-    }
-    save_store(store)
+        # Store value positions for restoration (coordinates only, not values)
+        # This allows re-highlighting the same positions after page refresh
+        if sps_values and isinstance(sps_values, list):
+            tracked_positions = []
+            for entry in sps_values:
+                if isinstance(entry, dict) and "x" in entry and "y" in entry:
+                    tracked_positions.append({
+                        "x": entry.get("x"),
+                        "y": entry.get("y"),
+                        "tag": entry.get("tag") or entry.get("label")
+                    })
+            if tracked_positions:
+                page_entry["canvases"][key]["trackedPositions"] = tracked_positions
+
+        # Always update lastSeen
+        page_entry["canvases"][key]["lastSeen"] = time.time()
+        await _write_store_file(store)
 
 
-def get_page_canvases(page_url: str):
-    store = load_store()
+async def get_page_canvases(page_url: str):
+    async with store_lock:
+        store = await _read_store_file()
     entry = store.get(page_url) or {}
     canvases = entry.get("canvases", {})
     return list(canvases.values())
 
 
-def process_update(payload: Dict[str, Any]):
+async def process_update(payload: Dict[str, Any]):
     canvas_id = payload.get("canvasId")
     canvas_name = (payload.get("canvasName") or payload.get("name") or "").strip() or canvas_id or "unknown"
     sps_values = payload.get("spsValues", [])
     page_url = payload.get("pageUrl") or payload.get("page") or ""
+    ip_prefix = payload.get("ipPrefix") or "unknown"
 
     if not canvas_id:
         return {"status": "error", "error": "canvasId missing"}
 
     updated = []
+
     for entry in sps_values:
         try:
-            tag = entry.get("tag") or entry.get("label") or "value"
+            tag = entry.get("tag") or entry.get("label")
             value_str = entry.get("value") or entry.get("val") or entry
             value = float(str(value_str).replace(",", "."))
-            metric_name = build_metric_name(canvas_name, tag)
-            gauge = get_gauge(metric_name, f"{canvas_name} - {tag}")
+            x = entry.get("x", 0)
+            y = entry.get("y", 0)
+
+            # Build unique metric name with IP prefix
+            if tag and tag != "value":
+                # Has a proper label - use it directly
+                metric_name = build_metric_name(ip_prefix, canvas_name, tag)
+                tag_display = tag
+            else:
+                # No label - use position to create unique metric name
+                position_key = f"value_x{x}_y{y}"
+                metric_name = build_metric_name(ip_prefix, canvas_name, position_key)
+                tag_display = f"pos({x},{y})"
+
+            gauge = get_gauge(metric_name, f"{ip_prefix} - {canvas_name} - {tag or 'unlabeled value'}")
             gauge.set(value)
-            updated.append({"tag": tag, "value": value, "metric": metric_name})
+            logger.info(f"Updated metric {metric_name} = {value}")
+            updated.append({"tag": tag_display, "value": value, "metric": metric_name})
         except Exception as exc:
             logger.warning("Failed to process value entry %s: %s", entry, exc)
 
-    record_metrics(page_url, canvas_name, canvas_id, sps_values)
-    logger.info("Canvas update: %s (%s) updated=%s", canvas_id, canvas_name, len(updated))
+    await record_metrics(page_url, canvas_name, canvas_id, sps_values)
+    logger.info("Canvas update: %s (%s) [%s] updated=%s", canvas_id, canvas_name, ip_prefix, len(updated))
     return {"status": "ok", "updated": updated, "canvasId": canvas_id, "canvasName": canvas_name}
 
 
@@ -160,7 +207,7 @@ async def canvas_update():
         if not isinstance(entry, dict):
             logger.warning("Skipping non-dict payload entry: %s", entry)
             continue
-        result = process_update(entry)
+        result = await process_update(entry)
         logger.info(f"Processed result: {result}")
         processed.append(result)
 
@@ -180,7 +227,7 @@ async def events():
 @app.route("/api/metrics", methods=["GET"])
 async def metrics():
     page = request.args.get("page") or request.args.get("url") or ""
-    canvases = get_page_canvases(page) if page else []
+    canvases = await get_page_canvases(page) if page else []
     return jsonify({"status": "ok", "page": page, "canvases": canvases})
 
 
