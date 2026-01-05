@@ -1,6 +1,6 @@
 # Browser Version Overview
 
-This folder contains a lightweight, browser-driven setup for mirroring WebVisu canvases into Prometheus. It has two pieces:
+This folder contains a lightweight, browser-driven setup for mirroring WebVisu (Codesys) canvases into Prometheus. It has two pieces:
 
 - `backend.py` – a Quart service that receives canvas updates, converts each tag/value into a Prometheus gauge, exposes metrics, and persists a small cache of canvases per page URL.
 - `script.js` – a Tampermonkey userscript that lets you pick canvases in the browser, polls them for changes, and posts SPS/tag values plus page context back to the backend.
