@@ -3,3 +3,4 @@
 /headless/node_modules
 /.claude
 /browser_version/__pycache__
+browser_version/metrics_store.json

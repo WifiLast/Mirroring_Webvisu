@@ -130,5 +130,48 @@
         "lastSeen": 1766495924.184449
       }
     }
+  },
+  "http://192.168.1.200:8080/webvisu/webvisu.htm": {
+    "canvases": {
+      "ok": {
+        "canvasId": "cdsCanvas_1_12_35",
+        "canvasName": "ok",
+        "pageUrl": "http://192.168.1.200:8080/webvisu/webvisu.htm",
+        "trackedPositions": [
+          {
+            "x": 115,
+            "y": 13,
+            "tag": null
+          }
+        ],
+        "lastSeen": 1767608311.145588
+      },
+      "tt004": {
+        "canvasId": "cdsCanvas_1_12_35",
+        "canvasName": "tt004",
+        "pageUrl": "http://192.168.1.200:8080/webvisu/webvisu.htm",
+        "trackedPositions": [
+          {
+            "x": 116,
+            "y": 13,
+            "tag": null
+          }
+        ],
+        "lastSeen": 1767607839.0811243
+      },
+      "tt004test": {
+        "canvasId": "cdsCanvas_1_12_35",
+        "canvasName": "tt004test",
+        "pageUrl": "http://192.168.1.200:8080/webvisu/webvisu.htm",
+        "trackedPositions": [
+          {
+            "x": 115,
+            "y": 13,
+            "tag": null
+          }
+        ],
+        "lastSeen": 1767608311.1778345
+      }
+    }
   }
 }

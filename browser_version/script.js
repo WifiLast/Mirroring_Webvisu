@@ -46,6 +46,7 @@
 
   const updateQueue = [];
   let updateTimer = null;
+  const KEEPALIVE_IFRAME_ID = "wv-tab-keepalive";
 
   function getBackendBase() {
     try {
@@ -393,6 +394,37 @@
     }
   }
   injectStyles();
+
+  // Keep tab active by running a self-reloading invisible iframe
+  function startTabKeepAlive(intervalMs = 30000) {
+    const existing = document.getElementById(KEEPALIVE_IFRAME_ID);
+    if (existing) return existing;
+
+    const iframe = document.createElement("iframe");
+    iframe.id = KEEPALIVE_IFRAME_ID;
+    iframe.style.cssText = "position:absolute;width:0;height:0;opacity:0;pointer-events:none;border:0;";
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.srcdoc = `
+<!doctype html>
+<html><body style="margin:0;padding:0;">
+<script>
+  const interval = ${intervalMs};
+  setTimeout(() => {
+    try { location.reload(); } catch (e) {}
+  }, interval);
+<\/script>
+</body></html>`;
+
+    document.body.appendChild(iframe);
+    return iframe;
+  }
+
+  // Ensure keep-alive starts once the DOM is ready
+  if (document.readyState === "complete" || document.readyState === "interactive") {
+    startTabKeepAlive();
+  } else {
+    document.addEventListener("DOMContentLoaded", () => startTabKeepAlive(), { once: true });
+  }
 
   function hashString(str) {
     let hash = 5381;
