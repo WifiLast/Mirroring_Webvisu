@@ -7,127 +7,122 @@
         "pageUrl": "https://192.168.1.17/webvisu/webvisu.htm",
         "trackedPositions": [
           {
-            "x": 171,
-            "y": 131,
+            "x": 351,
+            "y": 163,
             "tag": null
           },
           {
-            "x": 171,
-            "y": 157,
+            "x": 351,
+            "y": 196,
             "tag": null
           },
           {
-            "x": 171,
-            "y": 184,
+            "x": 351,
+            "y": 229,
             "tag": null
           },
           {
-            "x": 171,
-            "y": 210,
+            "x": 351,
+            "y": 262,
             "tag": null
           },
           {
-            "x": 171,
-            "y": 342,
-            "tag": null
-          },
-          {
-            "x": 374,
-            "y": 130,
-            "tag": null
-          },
-          {
-            "x": 374,
-            "y": 156,
-            "tag": null
-          },
-          {
-            "x": 693,
-            "y": 130,
-            "tag": null
-          },
-          {
-            "x": 693,
-            "y": 183,
-            "tag": null
-          },
-          {
-            "x": 693,
-            "y": 104,
-            "tag": "RH001"
-          },
-          {
-            "x": 693,
-            "y": 157,
-            "tag": null
-          },
-          {
-            "x": 895,
-            "y": 130,
-            "tag": "DBF001"
-          },
-          {
-            "x": 895,
-            "y": 236,
-            "tag": "VOT001"
-          },
-          {
-            "x": 895,
-            "y": 210,
-            "tag": null
-          },
-          {
-            "x": 895,
-            "y": 104,
-            "tag": "PT001"
-          },
-          {
-            "x": 171,
-            "y": 236,
-            "tag": null
-          },
-          {
-            "x": 171,
-            "y": 263,
-            "tag": "FLT002"
-          },
-          {
-            "x": 172,
-            "y": 450,
-            "tag": null
-          },
-          {
-            "x": 173,
-            "y": 398,
+            "x": 355,
+            "y": 497,
             "tag": "RH007"
           },
           {
-            "x": 529,
+            "x": 767,
+            "y": 163,
+            "tag": null
+          },
+          {
+            "x": 767,
+            "y": 195,
+            "tag": null
+          },
+          {
+            "x": 1423,
+            "y": 163,
+            "tag": null
+          },
+          {
+            "x": 1423,
+            "y": 228,
+            "tag": null
+          },
+          {
+            "x": 1423,
             "y": 130,
+            "tag": "RH001"
+          },
+          {
+            "x": 1423,
+            "y": 195,
             "tag": null
           },
           {
-            "x": 653,
-            "y": 617,
+            "x": 1837,
+            "y": 162,
+            "tag": "DBF001"
+          },
+          {
+            "x": 1837,
+            "y": 362,
+            "tag": "VOT001"
+          },
+          {
+            "x": 1837,
+            "y": 262,
             "tag": null
           },
           {
-            "x": 653,
-            "y": 598,
+            "x": 1837,
+            "y": 130,
+            "tag": "PT001"
+          },
+          {
+            "x": 351,
+            "y": 294,
             "tag": null
           },
           {
-            "x": 694,
-            "y": 598,
+            "x": 351,
+            "y": 328,
+            "tag": "FLT002"
+          },
+          {
+            "x": 353,
+            "y": 562,
+            "tag": "TT007"
+          },
+          {
+            "x": 1087,
+            "y": 163,
             "tag": null
           },
           {
-            "x": 694,
-            "y": 617,
+            "x": 1340,
+            "y": 770,
+            "tag": null
+          },
+          {
+            "x": 1340,
+            "y": 747,
+            "tag": null
+          },
+          {
+            "x": 1425,
+            "y": 747,
+            "tag": null
+          },
+          {
+            "x": 1425,
+            "y": 770,
             "tag": null
           }
         ],
-        "lastSeen": 1766495924.184449
+        "lastSeen": 1767625660.860821
       }
     }
   },
@@ -144,24 +139,11 @@
             "tag": null
           }
         ],
-        "lastSeen": 1767608311.145588
+        "lastSeen": 1767609124.6082656
       },
       "tt004": {
         "canvasId": "cdsCanvas_1_12_35",
         "canvasName": "tt004",
-        "pageUrl": "http://192.168.1.200:8080/webvisu/webvisu.htm",
-        "trackedPositions": [
-          {
-            "x": 116,
-            "y": 13,
-            "tag": null
-          }
-        ],
-        "lastSeen": 1767607839.0811243
-      },
-      "tt004test": {
-        "canvasId": "cdsCanvas_1_12_35",
-        "canvasName": "tt004test",
         "pageUrl": "http://192.168.1.200:8080/webvisu/webvisu.htm",
         "trackedPositions": [
           {
@@ -170,7 +152,20 @@
             "tag": null
           }
         ],
-        "lastSeen": 1767608311.1778345
+        "lastSeen": 1767609124.6360114
+      },
+      "tt004test": {
+        "canvasId": "cdsCanvas_1_12_35",
+        "canvasName": "tt004test",
+        "pageUrl": "http://192.168.1.200:8080/webvisu/webvisu.htm",
+        "trackedPositions": [
+          {
+            "x": 70,
+            "y": 13,
+            "tag": null
+          }
+        ],
+        "lastSeen": 1767615421.457672
       }
     }
   }

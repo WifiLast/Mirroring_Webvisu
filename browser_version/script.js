@@ -396,7 +396,7 @@
   injectStyles();
 
   // Keep tab active by running a self-reloading invisible iframe
-  function startTabKeepAlive(intervalMs = 30000) {
+  function startTabKeepAlive(intervalMs = 5000) {
     const existing = document.getElementById(KEEPALIVE_IFRAME_ID);
     if (existing) return existing;
 
