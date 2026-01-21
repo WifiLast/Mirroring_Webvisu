@@ -3,6 +3,8 @@ import json
 import logging
 import re
 import time
+import sys
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -16,8 +18,9 @@ logger = logging.getLogger("webvisu-backend")
 
 app = Quart(__name__)
 
-# Prometheus config
-PROM_PORT = int(8077)
+# Prometheus config - can be overridden via environment variables or command line
+PROM_HOST = os.getenv("PROM_HOST", "0.0.0.0")
+PROM_PORT = int(os.getenv("PROM_PORT", "8019") or "8019")
 STORE_PATH = Path(__file__).parent / "metrics_store.json"
 # We create gauges dynamically per metric name (using default registry like opc_PLS.py)
 gauges: Dict[str, Gauge] = {}
@@ -232,6 +235,17 @@ async def metrics():
 
 
 if __name__ == "__main__":
+    # Parse command line arguments
+    prom_host = PROM_HOST
+    prom_port = PROM_PORT
+
+    if len(sys.argv) > 1:
+        prom_host = sys.argv[1]
+    if len(sys.argv) > 2:
+        prom_port = int(sys.argv[2])
+
+    logger.info("Configuration: Prometheus server will listen on %s:%s", prom_host, prom_port)
+
     # Clear any existing metrics from registry (like opc_client_source.py does in clear_registry)
     logger.info("Clearing existing metrics from registry...")
     clear_registry(prefix="test")
@@ -253,8 +267,8 @@ if __name__ == "__main__":
     logger.info("Test metrics created: test_metric=42.0, test_temperature=23.5, test_system_status=1.0")
 
     # Start Prometheus HTTP server AFTER creating gauges (like opc_PLS.py does on line 291)
-    logger.info("Starting Prometheus metrics server on 0.0.0.0:%s", PROM_PORT)
-    start_http_server(PROM_PORT)
+    logger.info("Starting Prometheus metrics server on %s:%s", prom_host, prom_port)
+    start_http_server(prom_port, addr=prom_host)
 
     logger.info("Starting Quart app on 0.0.0.0:5002")
     app.run(host="0.0.0.0", port=5002, debug=True)
