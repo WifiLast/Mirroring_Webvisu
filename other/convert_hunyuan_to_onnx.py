@@ -14,6 +14,7 @@ import numpy as np
 import torch
 from diffusers import AutoencoderKLHunyuanVideo, HunyuanVideoTransformer3DModel
 from transformers import LlamaModel
+from huggingface_hub import snapshot_download
 from contextlib import contextmanager
 import threading
 import gc
@@ -541,6 +542,25 @@ def export_text_encoder(model_id, output_dir, opset, device, validate, dtype=tor
         logger.error(f"Export failed: {e}")
 
 
+
+def download_model(model_id):
+    """
+    Downloads the model from Hugging Face if not found locally.
+    """
+    if os.path.isdir(model_id):
+        logger.info(f"Model found locally at: {model_id}")
+        return
+
+    logger.info(f"Checking/Downloading model from Hugging Face: {model_id}")
+    try:
+        # We allow patterns relevant to the components we use: vae, transformer, text_encoder, tokenizer, scheduler
+        # But for simplicity, we just download the repo. diffusers usually downloads what it needs.
+        # Check if it's already cached first? snapshot_download handles that.
+        snapshot_download(repo_id=model_id, allow_patterns=["*vae*", "*transformer*", "*text_encoder*", "*tokenizer*", "*scheduler*", "*config.json*"]) 
+        logger.info("Model download check complete.")
+    except Exception as e:
+        logger.warning(f"Download attempt failed: {e}. Will attempt to proceed with standard loading which might trigger its own download.")
+
 def main():
     args = get_args()
     
@@ -548,6 +568,10 @@ def main():
         os.makedirs(args.output_dir)
         
     logger.info(f"Starting export for model: {args.model_id}")
+    
+    # Ensure model is available
+    download_model(args.model_id)
+    
     logger.info(f"Output directory: {args.output_dir}")
     logger.info(f"Target device: {args.device}")
     
