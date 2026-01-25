@@ -6,3 +6,4 @@ huggingface_hub
 onnx
 onnxruntime-gpu
 tensorrt
+accelerate

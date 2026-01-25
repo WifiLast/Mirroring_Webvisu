@@ -342,6 +342,7 @@ def export_vae(model_id, output_dir, opset, device, validate, dtype=torch.float3
     vae.to(device, dtype=dtype)
     vae.eval()
     
+
     class VAEDecoderWrapper(torch.nn.Module):
         def __init__(self, vae):
             super().__init__()
@@ -350,6 +351,10 @@ def export_vae(model_id, output_dir, opset, device, validate, dtype=torch.float3
             return self.vae.decode(latents, return_dict=False)[0]
 
     model = VAEDecoderWrapper(vae)
+    model.to(device)
+    # Ensure VAE is in eval mode
+    model.eval()
+
     
     # Dummy Input
     batch = 1
@@ -390,12 +395,16 @@ def export_vae(model_id, output_dir, opset, device, validate, dtype=torch.float3
             safe_convert_fp16(onnx_path)
             
         if validate:
-            # If validated, we should probably reload and check (optional: against original request device?)
-            # Validating fp16 model vs fp32 torch output might have higher error, but let's try.
-            # We use the original inputs/device logic for validation if possible, or just reuse cpu inputs?
-            # validate_onnx expects inputs to be torch tensors.
             validate_onnx(onnx_path, torch_out, inputs)
             
+    except RuntimeError as e:
+        if "device" in str(e).lower() and device != "cpu":
+            logger.warning(f"Export on {device} failed due to device mismatch: {e}")
+            logger.warning("Falling back to CPU export...")
+            export_vae(model_id, output_dir, opset, "cpu", validate, dtype)
+            return
+        else:
+             logger.error(f"Export failed: {e}")
     except Exception as e:
         logger.error(f"Export failed: {e}")
 
@@ -489,6 +498,10 @@ def export_text_encoder(model_id, output_dir, opset, device, validate, dtype=tor
     # export_device = "cpu"
     # export_dtype = torch.float32
     # target_fp16 = (dtype == torch.float16)
+
+    # Temporary fix: Text Encoder uses internal buffers that might default to CPU?
+    # Keeping it simple for now.
+
     
     logger.info(f"Exporting Text Encoder on {device} in {dtype}...")
 
