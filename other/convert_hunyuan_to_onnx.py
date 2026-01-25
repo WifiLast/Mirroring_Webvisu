@@ -387,7 +387,8 @@ def export_vae(model_id, output_dir, opset, device, validate, dtype=torch.float3
                 output_names=["output"],
                 dynamic_axes=dynamic_axes,
                 opset_version=opset,
-                do_constant_folding=True
+                do_constant_folding=True,
+                dynamo=True
             )
         
         # Convert to FP16 if requested
@@ -481,7 +482,8 @@ def export_transformer(model_id, output_dir, opset, device, validate, dtype=torc
                 output_names=output_names,
                 dynamic_axes=dynamic_axes,
                 opset_version=opset,
-                do_constant_folding=True
+                do_constant_folding=True,
+                dynamo=True
             )
         
         if validate:
@@ -546,7 +548,8 @@ def export_text_encoder(model_id, output_dir, opset, device, validate, dtype=tor
                 output_names=["last_hidden_state"],
                 dynamic_axes=dynamic_axes,
                 opset_version=opset,
-                do_constant_folding=True
+                do_constant_folding=True,
+                dynamo=True
             )
         
         # Convert to FP16 if requested
