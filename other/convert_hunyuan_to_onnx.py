@@ -15,6 +15,10 @@ import torch
 from diffusers import AutoencoderKLHunyuanVideo, HunyuanVideoTransformer3DModel
 from transformers import LlamaModel
 from huggingface_hub import snapshot_download
+
+# Disable HF_HUB_ENABLE_HF_TRANSFER if hf_transfer is not installed
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+
 from contextlib import contextmanager
 import threading
 import gc
