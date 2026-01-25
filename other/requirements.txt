@@ -1,0 +1,8 @@
+numpy
+torch
+diffusers
+transformers
+huggingface_hub
+onnx
+onnxruntime-gpu
+tensorrt
