@@ -1,51 +1,100 @@
-var HTML5DemoButtonElementWrapper;
+var LineChartElementWrapper;
 
-(function ()
-{
-	/* This HTML5 demo button control is used to demonstrate how the input configuration can be used in a HTML5 control.
-	* When the input configuration is used in a HTML5 control than mouse events can be sent to IEC and the configured
-	* input actions OnMouseDown, OnMouseUp and OnMouseMove can be executed.*/
-	HTML5DemoButtonElementWrapper = function(idGenerator)
-	{
-        this.domNode = document.createElement("div");
-		this.domNode.className = "button";
+(function () {
+	/* HTML5 control wrapper for Chart.js Line Chart */
+	LineChartElementWrapper = function (idGenerator) {
+		this.domNode = document.createElement("div");
+		this.domNode.className = "line-chart-container";
 		this.domNode.style.width = "100%";
 		this.domNode.style.height = "100%";
-		this.domNode.style.overflow = "visible";
-		
+		this.domNode.style.position = "relative"; // Important for Chart.js responsiveness
+
+		// Create canvas for Chart.js
+		this.canvasFrom = document.createElement("canvas");
+		this.domNode.appendChild(this.canvasFrom);
+
 		document.body.appendChild(this.domNode);
+
 		var self = this;
-		this.domNode.onmousedown = function(event) {
-			self.sendMouseEvent(event);
-		}
-		this.domNode.onmousemove = function(event) {
-			self.sendMouseEvent(event);
-		}
-		this.domNode.onmouseup = function(event) {
-			self.sendMouseEvent(event);
-		}
+		this.chart = null;
+
+		// Initialize chart after a short delay to ensure DOM is ready and size is calculated
+		setTimeout(function () {
+			self.initChart();
+		}, 100);
 	};
-		
-	HTML5DemoButtonElementWrapper.prototype =
-	{
-		sendMouseEvent: function(event)
-		{
-			window.CDSWebVisuAccess.sendMouseEvent(event);
+
+	LineChartElementWrapper.prototype = {
+		initChart: function () {
+			if (typeof Chart === 'undefined') {
+				this.domNode.innerHTML = "Chart.js library not loaded!";
+				return;
+			}
+
+			var ctx = this.canvasFrom.getContext('2d');
+			this.chart = new Chart(ctx, {
+				type: 'line',
+				data: {
+					labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
+					datasets: [{
+						label: 'Demo Data',
+						data: [65, 59, 80, 81, 56, 55, 40],
+						fill: false,
+						borderColor: 'rgb(75, 192, 192)',
+						tension: 0.1
+					}]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false
+				}
+			});
 		},
-		
-		setText: function(value)
-		{
-			this.domNode.innerHTML = value;
+
+		// Keep existing property helpers if needed, or simply ignore them for now.
+		// We can add methods to update data later.
+		setText: function (value) {
+			// Example: Update chart title or something
+			if (this.chart && this.chart.options.plugins.title) {
+				this.chart.options.plugins.title.text = value;
+				this.chart.update();
+			}
 		},
-		
-		setColor: function(value)
-		{
-			this.domNode.style.backgroundColor = value;
+
+		setColor: function (value) {
+			// Example: Change border color
 		},
-		
-		setFont: function(value, type, typeid)
-		{
-			this.domNode.style.font = value.Font;
+
+		setFont: function (value, type, typeid) {
+			// Example: Change font
+		},
+
+		setInputLabels: function (value) {
+			if (!this.chart) return;
+			try {
+				// Determine if value is JSON string or array, though type is string in XML
+				var labels = JSON.parse(value);
+				if (Array.isArray(labels)) {
+					this.chart.data.labels = labels;
+					this.chart.update();
+				}
+			} catch (e) {
+				console.error("Invalid Labels JSON:", e);
+			}
+		},
+
+		setDatasets: function (value) {
+			if (!this.chart) return;
+			try {
+				// Expecting value to be an array of dataset objects or a single dataset object inside a JSON string
+				var datasets = JSON.parse(value);
+				if (Array.isArray(datasets)) {
+					this.chart.data.datasets = datasets;
+					this.chart.update();
+				}
+			} catch (e) {
+				console.error("Invalid Datasets JSON:", e);
+			}
 		}
 	};
 }());

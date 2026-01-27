@@ -5,12 +5,13 @@
 		<Company>MBO</Company>
 		<Description>Chart.js</Description>
 		<Version>1.0.0.0</Version>
-		<Image>ElementImage.svg</Image>
+		<Image>ElementImage.jpg</Image>
 		<Category>HTML5 Demo Controls</Category>
 		<ControlText>ControlTexts</ControlText>
 		<Files>
 			<File>ButtonStyle.css</File>
 			<File>ElementWrapper.js</File>
+			<File>Chart.js</File>
 		</Files>
 	</General>
 	<ControlProperties>
@@ -181,6 +182,62 @@
         <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string"></Single>
         <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
         <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">0</Single>
+        <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
+        <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
+        <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
+          <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
+          <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
+        </Single>
+      </Single>
+    </Single>
+    <Single Type="{b57c9aeb-85b7-4036-8619-1833751648fc}" Method="IArchivable">
+      <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">10</Single>
+      <List2 Name="HierarchicalRootNodeChildren">
+        <Single Type="{1626d958-cc88-4833-ad94-2fe3d1ca1a4a}" Method="IArchivable">
+          <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">9</Single>
+          <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">10</Single>
+          <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Eigenschaft</Single>
+          <Single Name="HierarchicalPropertiesNodeBaseDataEntry" Type="{36c29c7f-f2b6-44b2-b62f-0a5c394cfbfe}" Method="IArchivable">
+            <Single Name="HierarchicalPropertiesDataEntryName" Type="string">InputLabels</Single>
+            <Single Name="HierarchicalPropertiesDataEntryTextId" Type="string"></Single>
+            <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string">setInputLabels</Single>
+            <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
+            <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">1</Single>
+            <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
+            <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
+            <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
+              <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
+              <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
+            </Single>
+          </Single>
+        </Single>
+        <Single Type="{1626d958-cc88-4833-ad94-2fe3d1ca1a4a}" Method="IArchivable">
+          <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">11</Single>
+          <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">10</Single>
+          <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Eigenschaft</Single>
+          <Single Name="HierarchicalPropertiesNodeBaseDataEntry" Type="{36c29c7f-f2b6-44b2-b62f-0a5c394cfbfe}" Method="IArchivable">
+            <Single Name="HierarchicalPropertiesDataEntryName" Type="string">Datasets</Single>
+            <Single Name="HierarchicalPropertiesDataEntryTextId" Type="string"></Single>
+            <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string">setDatasets</Single>
+            <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
+            <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">1</Single>
+            <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
+            <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
+            <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
+              <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
+              <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
+            </Single>
+          </Single>
+        </Single>
+      </List2>
+      <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">-1</Single>
+      <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Kategorie-Knoten</Single>
+      <Single Name="HierarchicalPropertiesNodeBaseDataEntry" Type="{36c29c7f-f2b6-44b2-b62f-0a5c394cfbfe}" Method="IArchivable">
+        <Single Name="HierarchicalPropertiesDataEntryName" Type="string">Inputs</Single>
+        <Single Name="HierarchicalPropertiesDataEntryTextId" Type="string"></Single>
+        <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string"></Single>
+        <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
+        <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">1</Single>
         <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
         <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
         <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
