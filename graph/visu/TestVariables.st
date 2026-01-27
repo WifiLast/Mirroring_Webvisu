@@ -1,23 +1,40 @@
+TYPE GRAPH_AXIS :
+STRUCT
+	label: WSTRING;
+	data: ARRAY[0..10] OF REAL;
+	borderColor : WSTRING;
+	fill : WSTRING;
+END_STRUCT
+END_TYPE
+
 PROGRAM PLC_PRG
 VAR
-    (* Define strings long enough to hold the JSON data *)
-    sInputLabels : STRING(1000); 
-    sDatasets : STRING(2000);
+    (* Define the struct variable *)
+    myAxis : GRAPH_AXIS;
     
     (* Trigger variable to update data *)
     bUpdateChart : BOOL := FALSE;
+    
+    sInputLabels : STRING(1000); 
 END_VAR
 
 (* Implementation *)
 
 IF bUpdateChart THEN
-    (* JSON Array for Labels - Month names *)
-    (* Note: Use single quotes to wrap the ST string, and double quotes for JSON content *)
-    sInputLabels := '["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"]';
+    (* 1. Configure properties using the Struct *)
+    myAxis.label := "Temperature Sensor 1";
+    myAxis.borderColor := "blue";
+    myAxis.fill := "false";
     
-    (* JSON Array of Objects for Datasets *)
-    (* Contains 2 datasets: Temperature (Red) and Pressure (Blue) *)
-    sDatasets := '[{"label": "Temperature", "data": [10, 25, 15, 30, 22, 18, 28], "borderColor": "red", "fill": false}, {"label": "Pressure", "data": [100, 102, 98, 105, 101, 99, 103], "borderColor": "blue", "fill": false}]';
+    (* 2. Set Data Array *)
+    myAxis.data[0] := 22.5;
+    myAxis.data[1] := 23.0;
+    myAxis.data[2] := 21.8;
+    myAxis.data[3] := 24.1;
+    myAxis.data[4] := 22.9;
+    
+    (* 3. Set Labels (JSON String) *)
+    sInputLabels := '["10:00", "10:15", "10:30", "10:45", "11:00"]';
     
     bUpdateChart := FALSE;
 END_IF

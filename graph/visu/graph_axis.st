@@ -1,0 +1,8 @@
+TYPE GRAPH_AXIS :
+STRUCT
+	label: WSTRING;
+	data: ARRAY[0..172803] OF REAL;
+	borderColor : WSTRING;
+	fill : WSTRING;
+END_STRUCT
+END_TYPE
