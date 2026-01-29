@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Html5Control>
 	<General>
-		<Name>3D_Viewer</Name>
+		<Name>Model_Viewer</Name>
 		<Company>MBO</Company>
 		<Description>Three.js based</Description>
 		<Version>1.0.0.0</Version>
@@ -12,8 +12,6 @@
 			<File>three.min.js</File>
 			<File>GLTFLoader.js</File>
 			<File>OrbitControls.js</File>
-			<File>Fox.glb</File>
-			<File>Fox.gltf</File>
 			<File>ElementWrapper.js</File>
 			<File>ModelData.js</File>
 			<File>ModelResourceData.js</File>

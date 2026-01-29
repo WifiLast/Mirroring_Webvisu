@@ -10,6 +10,8 @@ var Model_ViewerElementWrapper;
 		this.domNode.style.height = "100%";
 		this.domNode.style.position = "relative";
 		this.domNode.style.overflow = "hidden";
+		this.domNode.style.border = "none"; // Explicitly remove border
+		this.domNode.style.outline = "none"; // Explicitly remove outline
 		// this.domNode.style.backgroundColor = "#f0f0f0"; // Light gray bg -> Removed for transparency
 
 		document.body.appendChild(this.domNode);
@@ -61,15 +63,38 @@ var Model_ViewerElementWrapper;
 			this.renderer.setClearColor(0x000000, 0); // Transparent background
 			this.renderer.setSize(width, height);
 			this.renderer.setPixelRatio(window.devicePixelRatio);
+
+			// Lighting & Color Correction (Google Model Viewer Style)
+			// Check for modern three.js sRGB encoding, otherwise use legacy gamma
+			if (THREE.sRGBEncoding) {
+				this.renderer.outputEncoding = THREE.sRGBEncoding;
+			} else {
+				this.renderer.gammaOutput = true;
+				this.renderer.gammaFactor = 2.2;
+			}
+
+			// Tone Mapping for realistic lighting falloff
+			if (THREE.ACESFilmicToneMapping) {
+				this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+				this.renderer.toneMappingExposure = 1.0;
+			}
+
 			this.domNode.appendChild(this.renderer.domElement);
 
 			// 4. Lights
-			var ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+			// Stronger Ambient Light (Base illumination)
+			var ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
 			this.scene.add(ambientLight);
 
-			var dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+			// Main Key Light (Sun)
+			var dirLight = new THREE.DirectionalLight(0xffffff, 3.0);
 			dirLight.position.set(5, 10, 7);
 			this.scene.add(dirLight);
+
+			// Fill Light (Opposite side to open up shadows)
+			var fillLight = new THREE.DirectionalLight(0xeef4ff, 2.0);
+			fillLight.position.set(-5, 2, -5);
+			this.scene.add(fillLight);
 
 			// 5. Controls
 			if (THREE.OrbitControls) {
