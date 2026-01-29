@@ -10,7 +10,7 @@ var Model_ViewerElementWrapper;
 		this.domNode.style.height = "100%";
 		this.domNode.style.position = "relative";
 		this.domNode.style.overflow = "hidden";
-		this.domNode.style.backgroundColor = "#f0f0f0"; // Light gray bg
+		// this.domNode.style.backgroundColor = "#f0f0f0"; // Light gray bg -> Removed for transparency
 
 		document.body.appendChild(this.domNode);
 
@@ -50,14 +50,15 @@ var Model_ViewerElementWrapper;
 
 			// 1. Scene
 			this.scene = new THREE.Scene();
-			this.scene.background = new THREE.Color(0xf0f0f0);
+			// this.scene.background = new THREE.Color(0xf0f0f0); // Removed for transparency
 
 			// 2. Camera
 			this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
 			this.camera.position.set(2, 1, 3); // Default position
 
 			// 3. Renderer
-			this.renderer = new THREE.WebGLRenderer({ antialias: true });
+			this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+			this.renderer.setClearColor(0x000000, 0); // Transparent background
 			this.renderer.setSize(width, height);
 			this.renderer.setPixelRatio(window.devicePixelRatio);
 			this.domNode.appendChild(this.renderer.domElement);
