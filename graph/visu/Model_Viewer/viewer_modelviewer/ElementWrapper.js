@@ -39,24 +39,6 @@ var GoogleModelViewerElementWrapper;
 	GoogleModelViewerElementWrapper.prototype = {
 		initViewer: function () {
 			console.log("GoogleModelViewerElementWrapper: initViewer called");
-
-			// Dynamic loading of module script to avoid CODESYS syntax errors
-			if (!document.getElementById('model-viewer-script')) {
-				var script = document.createElement('script');
-				script.id = 'model-viewer-script';
-				script.type = 'module';
-				script.src = 'model-viewer.mjs';
-				// Note: URL might need adjustment depending on where CODESYS serves files. 
-				// Usually it's in the same directory, so relative path works if the page is also there.
-				// But WebVisu often runs from root. We might need to find the base path.
-				// However, standard testing suggests relative filename often works if the base is set correctly.
-				// If not, we might need './model-viewer.mjs' or handle paths.
-				// Let's try relative first.
-
-				script.onerror = function () { console.error("Failed to load model-viewer.mjs"); };
-				document.head.appendChild(script);
-			}
-
 			this.waitForModelViewer();
 		},
 

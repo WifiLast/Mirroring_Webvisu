@@ -9,7 +9,7 @@
 		<Category>HTML5 Demo Controls</Category>
 		<ControlText>ControlTexts</ControlText>
 		<Files>
-			<File>model-viewer.mjs</File>
+			<File>modelviewer.mjs</File>
 			<File>CT2_0.glb</File>
 			<File>ElementWrapper.js</File>
 		</Files>
