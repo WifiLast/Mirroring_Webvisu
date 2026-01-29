@@ -1,20 +1,17 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Html5Control>
 	<General>
-		<Name>Model_Viewer</Name>
+		<Name>GoogleModelViewer</Name>
 		<Company>MBO</Company>
-		<Description>Three.js based</Description>
+		<Description>Google Model Viewer</Description>
 		<Version>1.0.0.0</Version>
 		<Image>ElementImage.ico</Image>
 		<Category>HTML5 Demo Controls</Category>
 		<ControlText>ControlTexts</ControlText>
 		<Files>
-			<File>three.min.js</File>
-			<File>GLTFLoader.js</File>
-			<File>OrbitControls.js</File>
+			<File>model-viewer.min.js</File>
+			<File>CT2_0.glb</File>
 			<File>ElementWrapper.js</File>
-			<File>ModelData.js</File>
-			<File>ModelResourceData.js</File>
 		</Files>
 	</General>
 	<ControlProperties>
