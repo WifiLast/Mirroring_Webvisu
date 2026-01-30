@@ -1,0 +1,206 @@
+TrendStorageReader (FB)
+FUNCTION_BLOCK TrendStorageReader EXTENDS TrendFbAbstractTrendStorageReader IMPLEMENTS ITrendStorageAccessReadOperator2
+
+This function block can be used from the application code to access the trend storage
+
+Methods:
+
+AddTrendStorageWriterListener
+
+ContinueReading
+
+GetMinMaxTimestamps
+
+Initialize
+
+Read
+
+RemoveTrendStorageWriterListener
+
+CurveFillingAlphaRead
+
+CurveFillingColorRead
+
+CurveFillingTypeRead
+
+CurveTypeRead
+
+DoContinueReading
+
+GradientAngleRead
+
+GradientBrightnessRead
+
+GradientCenterXRead
+
+GradientCenterYRead
+
+GradientColor1Read
+
+GradientColor2Read
+
+GradientColorBrightnessRead
+
+GradientTranspColor1Read
+
+GradientTranspColor2Read
+
+GradientTypeRead
+
+GradientUseTwoColorsRead
+
+LineStyleRead
+
+LineWidthRead
+
+Structure:
+
+AddTrendStorageWriterListener (Method)
+ContinueReading (Method)
+GetMinMaxTimestamps (Method)
+ITrendStorageAccessReadOperator
+DoContinueReading (Method)
+prvTblTrendConfigurationGetConfig
+LineStyleRead (Method)
+LineWidthRead (Method)
+ITrendStorageAccessReadOperator2
+CurveFillingAlphaRead (Method)
+CurveFillingColorRead (Method)
+CurveFillingTypeRead (Method)
+CurveTypeRead (Method)
+GradientAngleRead (Method)
+GradientBrightnessRead (Method)
+GradientCenterXRead (Method)
+GradientCenterYRead (Method)
+GradientColor1Read (Method)
+GradientColor2Read (Method)
+GradientColorBrightnessRead (Method)
+GradientTranspColor1Read (Method)
+GradientTranspColor2Read (Method)
+GradientTypeRead (Method)
+GradientUseTwoColorsRead (Method)
+Initialize (Method)
+Read (Method)
+RemoveTrendStorageWriterListener (Method)
+
+
+
+TrendStorageReader.Read (METH)
+METHOD Read : ETrendStorageReaderErrors
+
+Reads data from the trend storage.
+
+InOut:
+Scope
+
+Name
+
+Type
+
+Comment
+
+Return
+
+Read
+
+ETrendStorageReaderErrors
+
+A ETrendStorageReaderErrors value indicating, whether the processing has been completed successfully or not:
+ETrendStorageReaderErrors.NoError: Completed successfully
+
+ETrendStorageReaderErrors.NotInitialized: Call to method Initialize has not been done
+
+ETrendStorageReaderErrors.WrongParameter: If the ITrendStorageReaderConsumer instance is invalid
+
+ETrendStorageReaderErrors.AdditionalReadCallRequired: Reading has been completed successfully, but there is
+additional call of method ContinueReading necessary to read the rest of the data
+
+Input
+
+liTimstampFrom
+
+LINT
+
+The absolute timestamp of the 1st sample
+
+liTimstampTo
+
+LINT
+
+The absolute timestamp of the last sample
+
+itfTrendStorageReaderConsumer
+
+ITrendStorageReaderConsumer
+
+An instance of ITrendStorageReaderConsumer, to which the data read from the trend storage will be passed.
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+ITrendStorageReaderConsumer (ITF)
+INTERFACE ITrendStorageReaderConsumer
+
+This interface must be implemented by function blocks, that process the data read by TrendStorageReader.Read
+
+Methods:
+
+ErrorOccurred
+
+ReadingDataCompleted
+
+TimestampRead
+
+ValueRead
+
+VariableConfigurationRead
+
+Structure:
+
+ErrorOccurred (Method)
+ReadingDataCompleted (Method)
+TimestampRead (Method)
+ValueRead (Method)
+VariableConfigurationRead (Method)
+
+
+ITrendStorageReaderConsumer.ValueRead (METH)
+METHOD ValueRead
+
+Notification, that a variable value from TblTrendData has been read and can be processed.
+
+InOut:
+Scope
+
+Name
+
+Type
+
+Comment
+
+Input
+
+diWhichRow
+
+DINT
+
+A 0-based index of the row read from TblTrendData.
+
+iWhichVariable
+
+INT
+
+A 0-based index of the variable within all variables
+
+liValue
+
+LINT
+
+The value, that was read from TblTrendData
+
+xValueNULL
+
+BOOL
+
+Indicates, whether NULL is stored in the trend storage

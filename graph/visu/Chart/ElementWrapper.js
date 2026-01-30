@@ -230,6 +230,11 @@ var LineChart2ElementWrapper;
 			}
 		},
 
+		setDatasetDataCount: function (value) {
+			var count = parseInt(value);
+			if (!isNaN(count)) this.dataset1Count = count;
+		},
+
 		setDatasetData: function (value) {
 			console.log("LineChart2: setDatasetData called. Length:", String(value).length);
 			var dataToParse = value;
@@ -240,7 +245,6 @@ var LineChart2ElementWrapper;
 				try {
 					var data = JSON.parse(dataToParse);
 					if (Array.isArray(data)) {
-						console.log("LineChart2: Parsed data array length:", data.length);
 						if (this.chart) {
 							this._ensureDataset();
 							this.chart.data.datasets[0].data = data;
@@ -253,12 +257,18 @@ var LineChart2ElementWrapper;
 					console.error("Invalid Data JSON:", e, String(value).substring(0, 50));
 				}
 			} else if (Array.isArray(value)) {
+				var finalData = value;
+				// Slice if count is set and valid
+				if (typeof this.dataset1Count === 'number' && this.dataset1Count >= 0 && this.dataset1Count < value.length) {
+					finalData = value.slice(0, this.dataset1Count);
+				}
+
 				if (this.chart) {
 					this._ensureDataset();
-					this.chart.data.datasets[0].data = value;
+					this.chart.data.datasets[0].data = finalData;
 					this.chart.update();
 				} else {
-					this.pendingData.dataset.data = value;
+					this.pendingData.dataset.data = finalData;
 				}
 			}
 		},
@@ -297,6 +307,11 @@ var LineChart2ElementWrapper;
 			}
 		},
 
+		setDataset2DataCount: function (value) {
+			var count = parseInt(value);
+			if (!isNaN(count)) this.dataset2Count = count;
+		},
+
 		setDataset2Data: function (value) {
 			var dataToParse = value;
 			if (typeof value === 'string') {
@@ -316,12 +331,17 @@ var LineChart2ElementWrapper;
 					}
 				} catch (e) { console.error("Invalid Data2 JSON:", e); }
 			} else if (Array.isArray(value)) {
+				var finalData = value;
+				if (typeof this.dataset2Count === 'number' && this.dataset2Count >= 0 && this.dataset2Count < value.length) {
+					finalData = value.slice(0, this.dataset2Count);
+				}
+
 				if (this.chart) {
 					this._ensureDataset();
-					this.chart.data.datasets[1].data = value;
+					this.chart.data.datasets[1].data = finalData;
 					this.chart.update();
 				} else {
-					this.pendingData.dataset2.data = value;
+					this.pendingData.dataset2.data = finalData;
 				}
 			}
 		},

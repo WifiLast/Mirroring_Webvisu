@@ -1,0 +1,9 @@
+TYPE GRAPH_AXIS :
+STRUCT
+	sLabel: STRING;
+	aData: ARRAY[0..172803] OF REAL;
+    diNumOfData : DINT;
+	sBorderColor : STRING;
+	xFill : BOOL;
+END_STRUCT
+END_TYPE

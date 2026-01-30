@@ -106,7 +106,7 @@ var Model_Viewer_GLBElementWrapper;
 			}
 
 			// 6. Load Model
-			this.loadModel('CT2_0.glb');
+			this.loadModel('ct2_014.glb');
 
 			// Handle resize
 			var self = this;
