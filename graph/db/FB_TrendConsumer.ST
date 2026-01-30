@@ -1,14 +1,41 @@
 (* Consumer FB to receive data from TrendStorageReader *)
-FUNCTION_BLOCK FB_TrendConsumer IMPLEMENTS VisuTrendStorageAccess.ITrendStorageReaderConsumer
+FUNCTION_BLOCK TrendStorageReaderConsumer IMPLEMENTS ITrendStorageReaderConsumer
+VAR_INPUT
+	// If this flag is TRUE an output like a csv export will be generated. Should be only
+	// used, if not too much data is read from the trend storage
+	xDetailedOutput						: BOOL;
+	
+	// This member is used to track the total number of rows, that have been read from the trend storage
+	diTotalCountRows					: DINT;
+END_VAR
 VAR
-    pAxis : POINTER TO GRAPH_AXIS;
+	// This instance converts the values into a suitable representation, e.g. into a string
+	m_instValueConverter				: TrendStorageReaderValueConverter;	
+
+	// A line used to collect the data read from the trend storage
+	m_sLine								: STRING(255);
+	// Used to identify the rows
+	m_diWhichRow						: DINT;
+	
+	m_diRowCounter						: DINT;
+	// Used to track the minimum/maximum timestamp, that was read
+	m_liTimestampMin					: LINT := 16#1FFFFFFFFFFFFFFF;
+	m_liTimestampMax					: LINT := 0;
+	
+	pAxis : POINTER TO GRAPH_AXIS;
     pLabels : POINTER TO STRING(2000);
-    sLabels : STRING(2000); // Internal build buffer
-    iMaxLabels : INT := 20;
+    sLabels : STRING(2000);
     tStartTime : DT;
-    iCurrentRow : DINT;
-    rCurrentVal : REAL;
-    xFirst : BOOL := TRUE;
+    xFirst : BOOL;
+    
+    rLastNonZeroValue : REAL;
+    
+    // Deep Debugging
+    liLastRawValue : LINT;
+    iLastVarIndex : INT;
+    diValueReadCalls : DINT;
+    xLastNull : BOOL;
+    iLastNonZeroIndex : INT := -1; // New debug variable
 END_VAR
 
 METHOD SetDestination
@@ -30,6 +57,7 @@ END_VAR
         sLabels := '[';
     END_IF
     xFirst := TRUE;
+END_METHOD
 
 METHOD ErrorOccurred
 VAR_INPUT
@@ -39,84 +67,171 @@ VAR_INPUT
 	eDuringWhichStep	: VisuTrendStorageAccess.ETrendStorageReaderStep;
 END_VAR
     // Handled in main
+END_METHOD
 
 METHOD ReadingDataCompleted
-    // Finalize labels
-    IF pLabels <> 0 THEN
-        pLabels^ := CONCAT(pLabels^, ']');
-    END_IF
+VAR
+	CMPID_LigLog: UDINT;
+	sLogMessage : STRING(255);
+END_VAR
+IF xDetailedOutput THEN
+	IF LEN(m_sLine) <> 0 THEN
+		VisuElems.Visu_Output_3(DINT_TO_STRING(m_diWhichRow), ': ', m_sLine, 4);
+	END_IF
+	m_sLine := '';
+ELSE
+	diTotalCountRows := diTotalCountRows + m_diRowCounter;
+
+	sLogMessage := CONCAT('ReadingDataCompleted, m_diRowCounter = ', CONCAT('ReadingDataCompleted, m_diRowCounter = ', CONCAT(', diTotalCountRows = ', DINT_TO_STRING(diTotalCountRows))));
+	LogAdd2(LOG_STD_LOGGER, 0, CmpLog.LogClass.LOG_INFO, 0, 0, sLogMessage);
+	
+	// Prepare for next loops
+	m_diRowCounter := 0;
+	m_liTimestampMin := 16#1FFFFFFFFFFFFFFF;
+	m_liTimestampMax := 0;
+	
+	IF pLabels <> 0 THEN
+	    pLabels^ := CONCAT(pLabels^, ']');
+	END_IF
+END_IF
+END_METHOD
 
 METHOD TimestampRead
 VAR_INPUT
+	(* A 0-based index of the row read from TblTrendData*)
+	diWhichRow	: DINT;
+	
+	(* The absolute timestamp, that was read from TblTrendData*)
 	liTimestamp	: LINT;
 END_VAR
 VAR
-    sTempLabel : STRING(20);
-    dtCurrent : DT;
-    diIndex : DINT;
+	timeDate		: SYSTIMEDATE;
+	uiMicroseconds	: UINT;
 END_VAR
-    // Convert timestamp (uS or mS? Usually uS or mS from Trend. LINT is usually ms or us)
-    // Assuming MS since 1970? Or LTIME?
-    // Standard Trend timestamps are µs (microseconds) usually.
-    // DT is Seconds.
-    
-    // For label generation:
-    IF pAxis <> 0 AND pLabels <> 0 THEN
-        diIndex := pAxis^.diNumOfData; // Current index we are about to fill (ValueRead comes next usually?)
-        // Actually ValueRead might come before or after? Or multiple ValueReads per timestamp.
-        // Usually TimestampRead comes once per row.
-        
-        // Let's assume one variable per row for now or check iWhichVariable in ValueRead.
-        
-        IF diIndex < 100 AND (diIndex < iMaxLabels) THEN
-             // Convert to DT approx
-             dtCurrent := TO_DT(liTimestamp / 1000); // if ms
-             
-             sTempLabel := DT_TO_STRING(dtCurrent);
-             sTempLabel := RIGHT(sTempLabel, 8); 
-             
-             IF NOT xFirst THEN
-                 pLabels^ := CONCAT(pLabels^, ', "');
-             ELSE
-                 pLabels^ := CONCAT(pLabels^, '"');
-                 xFirst := FALSE;
-             END_IF
-             pLabels^ := CONCAT(pLabels^, sTempLabel);
-             pLabels^ := CONCAT(pLabels^, '"');
-        END_IF
-    END_IF
+
+IF xDetailedOutput THEN
+	IF LEN(m_sLine) <> 0 THEN
+		VisuElems.Visu_Output_3(DINT_TO_STRING(m_diWhichRow), ': ', m_sLine, 4);
+	END_IF
+	m_sLine := '';
+END_IF
+
+m_diWhichRow := diWhichRow;
+
+
+IF xDetailedOutput THEN
+	// We begin a new line
+	m_sLine := LINT_TO_STRING(liTimestamp);
+
+	// Comvert the timestamps in a human readable form
+	TrendStorageConvertFromTimestamp(liTimestamp := liTimestamp, timeDate => timeDate, uiMicroseconds => uiMicroseconds);
+
+	// We also append the timestamp in the human readable way
+	m_sLine := CONCAT(m_sLine, ';');
+	m_sLine := CONCAT(m_sLine, WORD_TO_STRING(timeDate.wYear));
+	m_sLine := CONCAT(m_sLine, '-');
+	m_sLine := CONCAT(m_sLine, WORD_TO_STRING(timeDate.wMonth));
+	m_sLine := CONCAT(m_sLine, '-');
+	m_sLine := CONCAT(m_sLine, WORD_TO_STRING(timeDate.wDay));
+	m_sLine := CONCAT(m_sLine, ' ');
+	m_sLine := CONCAT(m_sLine, WORD_TO_STRING(timeDate.wHour));
+	m_sLine := CONCAT(m_sLine, ':');
+	m_sLine := CONCAT(m_sLine, WORD_TO_STRING(timeDate.wMinute));
+	m_sLine := CONCAT(m_sLine, ':');
+	m_sLine := CONCAT(m_sLine, WORD_TO_STRING(timeDate.wSecond));
+	m_sLine := CONCAT(m_sLine, ':');
+	m_sLine := CONCAT(m_sLine, WORD_TO_STRING(timeDate.wMilliseconds));
+	m_sLine := CONCAT(m_sLine, ':');
+	m_sLine := CONCAT(m_sLine, UINT_TO_STRING(uiMicroseconds));
+ELSE
+	m_diRowCounter := m_diRowCounter + 1;
+	
+	m_liTimestampMax := MAX(m_liTimestampMax, liTimestamp);
+	
+	(* Append to Label String - Protect against overflow *)
+	IF pLabels <> 0 AND LEN(pLabels^) < 1900 THEN
+	    TrendStorageConvertFromTimestamp(liTimestamp := liTimestamp, timeDate => timeDate, uiMicroseconds => uiMicroseconds);
+	    
+	    IF NOT xFirst THEN
+	        pLabels^ := CONCAT(pLabels^, ','); // Add comma separator
+	    END_IF
+	    xFirst := FALSE; 
+	    
+	    pLabels^ := CONCAT(pLabels^, '"');
+	    pLabels^ := CONCAT(pLabels^, WORD_TO_STRING(timeDate.wHour));
+	    pLabels^ := CONCAT(pLabels^, ':');
+	    pLabels^ := CONCAT(pLabels^, WORD_TO_STRING(timeDate.wMinute));
+	    pLabels^ := CONCAT(pLabels^, ':');
+	    pLabels^ := CONCAT(pLabels^, WORD_TO_STRING(timeDate.wSecond));
+	    pLabels^ := CONCAT(pLabels^, '"');
+	END_IF
+END_IF
+END_METHOD
 
 METHOD ValueRead
 VAR_INPUT
+	(* A 0-based index of the row read from TblTrendData.*)
 	diWhichRow	: DINT;
+	(* A 0-based index of the variable within all variables*)
 	iWhichVariable	: INT;
+	(* The value, that was read from TblTrendData*)
 	liValue	: LINT;
+	(* Indicates, whether NULL is stored in the trend storage*)
 	xValueNULL	: BOOL;
 END_VAR
 VAR
-    diIndex : DINT;
+	sValue		: STRING;
 END_VAR
+
+// Debug Capture
+diValueReadCalls := diValueReadCalls + 1;
+liLastRawValue := liValue;
+iLastVarIndex := iWhichVariable;
+xLastNull := xValueNULL;
+
+IF xDetailedOutput THEN
+	// We simply append the value to the line, that simulates a line of a csv file
+	m_sLine := CONCAT(m_sLine, ';');
+	
+	sValue := m_instValueConverter.ConvertToString(iWhichVariable, liValue, xValueNULL);
+	m_sLine := CONCAT(m_sLine, sValue);
+ELSE
     IF pAxis <> 0 THEN
-        diIndex := pAxis^.diNumOfData;
+        // Debug: Check ALL variables for non-zero data
+        IF NOT xValueNULL THEN
+             sValue := m_instValueConverter.ConvertToString(iWhichVariable, liValue, xValueNULL);
+             IF STRING_TO_REAL(sValue) <> 0 THEN
+                 rLastNonZeroValue := STRING_TO_REAL(sValue);
+                 iLastNonZeroIndex := iWhichVariable;
+             END_IF
+        END_IF
         
-        IF diIndex <= 172803 THEN
-             // Convert LINT raw value to REAL. 
-             // Note: Raw value in Trend is often scaled. LINT might be the raw int.
-             // If variable is REAL in PLC, it is stored as bit pattern or scaled???
-             // Standard Trend Storage often stores as LREAL or scaled INT. 
-             // ValueRead signature says liValue : LINT.
-             // If original var is REAL, treat LINT as bits? Or Cast?
-             // For now assume direct cast or small scaling.
-             pAxis^.aData[diIndex] := TO_REAL(liValue); 
-             
-             pAxis^.diNumOfData := pAxis^.diNumOfData + 1;
+        IF iWhichVariable = 0 AND NOT xValueNULL THEN
+             IF pAxis^.diNumOfData <= 1000 THEN
+                // Use converter to handle potential REAL/INT types correctly via string representation
+                sValue := m_instValueConverter.ConvertToString(iWhichVariable, liValue, xValueNULL);
+                pAxis^.aData[pAxis^.diNumOfData] := STRING_TO_REAL(sValue);
+                
+                pAxis^.diNumOfData := pAxis^.diNumOfData + 1;
+            END_IF       
         END_IF
     END_IF
 
+END_IF
+END_METHOD
+
 METHOD VariableConfigurationRead
 VAR_INPUT
-	pVariableConfiguration	: POINTER TO VisuTrendStorageAccess.TblTrendVariable;
-	xIsFirstVariableConfiguration	: BOOL;
+	paTrendStorageVariableDescription	: POINTER TO ARRAY [0..0] OF VISUTRENDSTORAGEACCESS.TrendStorageVariableDescription;
+	iCountVariables	: INT;
 END_VAR
-    // Optional
+
+m_instValueConverter.SetVariableConfiguration(paTrendStorageVariableDescription, iCountVariables);
+
+// If we previously collected data, we dump it
+
+
+VisuElems.Visu_Output_3('New configuration having ', INT_TO_STRING(iCountVariables), ' variables', 4);
+END_METHOD
+
 END_FUNCTION_BLOCK

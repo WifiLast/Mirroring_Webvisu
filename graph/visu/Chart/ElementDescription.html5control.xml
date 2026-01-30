@@ -286,6 +286,24 @@
                 </Single>
               </Single>
             </Single>
+            <Single Type="{1626d958-cc88-4833-ad94-2fe3d1ca1a4a}" Method="IArchivable">
+              <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">17</Single>
+              <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">12</Single>
+              <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Eigenschaft</Single>
+              <Single Name="HierarchicalPropertiesNodeBaseDataEntry" Type="{36c29c7f-f2b6-44b2-b62f-0a5c394cfbfe}" Method="IArchivable">
+                <Single Name="HierarchicalPropertiesDataEntryName" Type="string">NumberOfData</Single>
+                <Single Name="HierarchicalPropertiesDataEntryTextId" Type="string"></Single>
+                <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string">setNumberOfData</Single>
+                <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
+                <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">1</Single>
+                <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
+                <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
+                <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
+                  <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
+                  <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
+                </Single>
+              </Single>
+            </Single>
           </List2>
           <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">10</Single>
           <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Kategorie-Knoten</Single>

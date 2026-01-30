@@ -1,7 +1,7 @@
 TYPE GRAPH_AXIS :
 STRUCT
 	sLabel: STRING;
-	aData: ARRAY[0..172803] OF REAL;
+	aData: ARRAY[0..1000] OF REAL;
     diNumOfData : DINT;
 	sBorderColor : STRING;
 	xFill : BOOL;

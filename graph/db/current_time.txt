@@ -1,0 +1,46 @@
+PROGRAM current_time
+VAR
+    stUTC_DateAndTime : SYSTIME;
+
+    Result : RTS_IEC_RESULT;
+
+    ldtNow : LDATE_AND_TIME;
+    ltodNow : LTIME_OF_DAY;
+    ldatNow : LDATE;
+
+    stUTC_Timestamp : SysTime;
+    stLocal_TimeStamp : SysTime;
+    stdNow : SysTimeDate;
+
+    Result : RTS_IEC_RESULT;
+
+    dtNow : DATE_AND_TIME;
+    todNow : TIME_OF_DAY;
+    datNow : DATE;    
+END_VAR
+
+Result := SysTimeRtcHighResGet(stUTC_DateAndTime); // UlINT#1738934115369
+
+ldtNow := TO_LDT(stUTC_DateAndTime * LTIME#1ms); // LDT#2025-2-7-13:15:15.369000000
+ltodNow := TO_LTOD(ldtNow); // LTOD#13:15:15.369000000
+ldatNow := TO_LDATE(ldtNow); // LD#2025-2-7
+
+
+Result := SysTimeRtcHighResGet(stUTC_Timestamp); // ULINT#1528273494913
+Result := SysTimeRtcConvertHighResToLocal(stUTC_Timestamp, stdNow);
+
+// stdNow.wYear = UINT#2018
+// stdNow.wMonth = UINT#6
+// stdNowy.wDay = UINT#6
+// stdNow.wHour = UINT#10
+// stdNow.wMinute = UINT#24
+// stdNow.wSecond = UINT#54
+// stdNow.wMilliseconds = UINT#913
+// stdNow.wDayOfWeek = UINT#3
+// stdNow.wYday = UINT#157
+
+Result := SysTimeRtcConvertDateToHighRes(stdNow, stLocal_TimeStamp); // ULINT#1528280694913
+
+dtNow := TO_DT(stLocal_TimeStamp / TIME#1ms); // DT#2018-6-6-10:24:54
+todNow := TO_TOD(stLocal_TimeStamp MOD TO_ULINT(T#1D)); // TOD#10:24:54.913
+datToday := TO_DATE(dtNow); // D#2018-6-6

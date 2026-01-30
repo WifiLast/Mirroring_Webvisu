@@ -43,21 +43,38 @@ var LineChart2ElementWrapper;
 			}
 
 			// Default initial data (demo) if nothing pending
-			var initialLabels = ['January', 'February', 'March', 'April', 'May', 'June', 'July'];
+			// Default initial data
+			var initialLabels = [];
 			var initialDataset = {
-				label: 'Demo Data',
-				data: [65, 59, 80, 81, 56, 55, 40],
+				label: '',
+				data: [],
 				fill: false,
 				borderColor: 'rgb(75, 192, 192)',
 				tension: 0.1
 			};
+
+			// Initialize internal state for number of data points
+			if (this.currentNumberOfData === undefined) {
+				this.currentNumberOfData = -1; // -1 means use all
+			}
 
 			// Override defaults with pending data if available
 			if (this.pendingData.labels) {
 				initialLabels = this.pendingData.labels;
 			}
 			if (this.pendingData.dataset.label) initialDataset.label = this.pendingData.dataset.label;
-			if (this.pendingData.dataset.data) initialDataset.data = this.pendingData.dataset.data;
+
+			// Data handling with potential slicing
+			var pendingData = this.pendingData.dataset.data;
+			if (pendingData) {
+				if (this.currentNumberOfData > 0 && Array.isArray(pendingData) && pendingData.length > this.currentNumberOfData) {
+					console.log("LineChart init: Slicing pending data to " + this.currentNumberOfData);
+					initialDataset.data = pendingData.slice(0, this.currentNumberOfData);
+				} else {
+					initialDataset.data = pendingData;
+				}
+			}
+
 			if (this.pendingData.dataset.borderColor) initialDataset.borderColor = this.pendingData.dataset.borderColor;
 			if (this.pendingData.dataset.fill !== null) initialDataset.fill = this.pendingData.dataset.fill;
 
@@ -159,6 +176,12 @@ var LineChart2ElementWrapper;
 				return;
 			}
 
+			// 1.5 Slicing Logic (Limit to NumberOfData)
+			if (this.currentNumberOfData > 0 && Array.isArray(data) && data.length > this.currentNumberOfData) {
+				// console.log("LineChart update: Slicing data to " + this.currentNumberOfData);
+				data = data.slice(0, this.currentNumberOfData);
+			}
+
 			// 2. Downsampling / Optimization Logic
 			// Chart.js can handle a few thousand points, but 170k+ will kill it.
 			// Simple LTTB (Largest-Triangle-Three-Buckets) or just Nth-sampling is needed.
@@ -212,6 +235,21 @@ var LineChart2ElementWrapper;
 				this.chart.update();
 			} else {
 				this.pendingData.dataset.borderColor = value;
+			}
+		},
+
+		setNumberOfData: function (value) {
+			// console.log("LineChart: setNumberOfData called", value);
+			var num = parseInt(value, 10);
+			if (!isNaN(num)) {
+				this.currentNumberOfData = num;
+				// If we already have data pending or in chart, we might need to update
+				if (this.chart) {
+					// We need to re-apply data if we have the full source available. 
+					// However, we don't store the full source in this wrapper after init/update to save memory.
+					// So acts as a config for *next* data update or init.
+					console.log("LineChart: NumberOfData updated. Will apply on next data set.");
+				}
 			}
 		},
 
