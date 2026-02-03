@@ -15,12 +15,22 @@ END_VAR
 
 // Initialization of dummy data
 IF NOT xInit THEN
+    // Create mix of error, warning, and notice alarms
     FOR i := 0 TO 10 DO
         myAlarms.ALARMS[i].ID := CONCAT('ID_', INT_TO_STRING(i));
         myAlarms.ALARMS[i].EQUIP_ID := 'EQ_Main';
         myAlarms.ALARMS[i].Description := CONCAT('Alarm Description ', INT_TO_STRING(i));
         myAlarms.ALARMS[i].Value := (i MOD 2) = 0; // Alternating TRUE/FALSE
         myAlarms.ALARMS[i].TIMESTAMP := T#12h34m; // Static time for demo
+        
+        // Assign alarm types: ERROR, WARNING, NOTICE
+        IF (i MOD 3) = 0 THEN
+            myAlarms.ALARMS[i].AlarmType := 'ERROR';
+        ELSIF (i MOD 3) = 1 THEN
+            myAlarms.ALARMS[i].AlarmType := 'WARNING';
+        ELSE
+            myAlarms.ALARMS[i].AlarmType := 'NOTICE';
+        END_IF
     END_FOR
     
     // Clear the rest

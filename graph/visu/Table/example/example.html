@@ -1,34 +1,16 @@
-function () {
-const tableRef = useRef(null);
-const wrapperRef = useRef(null);
-
-useEffect(() => {
 const grid = new Grid({
-from: tableRef.current,
-}).render(wrapperRef.current);
+columns: [
+'Name',
+'Email',
+'Title',
+],
+sort: true,
+pagination: true,
+fixedHeader: true,
+height: '400px',
+data: Array(50).fill().map(x => [
+faker.name.findName(),
+faker.internet.email(),
+faker.name.title(),
+])
 });
-
-return (
-<>
-    <table ref={tableRef}>
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Email</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td>John</td>
-                <td>john@example.com</td>
-            </tr>
-            <tr>
-                <td>Mike</td>
-                <td><b>mike@example.com</b></td>
-            </tr>
-        </tbody>
-    </table>
-    <div ref={wrapperRef} />
-</>
-);
-}
