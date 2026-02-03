@@ -380,10 +380,10 @@ var TableElementWrapper;
 
 			return {
 				columns: [
-					{ name: "Time Stamp", id: "TIMESTAMP", width: "10%" },
-					{ name: "Plant Nr.", id: "ID", width: "10%" },
-					{ name: "Equipment ID", id: "EQUIP_ID", width: "20%" },
-					{ name: "Description", id: "Description", width: "60%" }
+					{ name: "Time Stamp", id: "TIMESTAMP", width: "15%" },
+					{ name: "Plant Nr.", id: "ID", width: "15%" },
+					{ name: "Equipment ID", id: "EQUIP_ID", width: "15%" },
+					{ name: "Description", id: "Description", width: "55%" }
 				],
 				data: entries
 			};
