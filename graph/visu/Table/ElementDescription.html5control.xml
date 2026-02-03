@@ -11,9 +11,10 @@
 		<Files>
 			<File>ButtonStyle.css</File>
 			<File>ElementWrapper.js</File>
-			<File>dataTables.js</File>
-			<File>dataTables.dataTables.min.css</File>
-			<File>jquery.min.js</File>
+			<File>gridjs.umd.js</File>
+			<File>mermaid.min.css</File>
+			<File>TableStyles.css</File>
+			<File>tailwind-ui.min.css</File>
 		</Files>
 	</General>
 	<ControlProperties>
@@ -213,117 +214,9 @@
     <Single Type="{b57c9aeb-85b7-4036-8619-1833751648fc}" Method="IArchivable">
       <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">10</Single>
       <List2 Name="HierarchicalRootNodeChildren">
-        <Single Type="{1626d958-cc88-4833-ad94-2fe3d1ca1a4a}" Method="IArchivable">
-          <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">9</Single>
-          <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">10</Single>
-          <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Eigenschaft</Single>
-          <Single Name="HierarchicalPropertiesNodeBaseDataEntry" Type="{36c29c7f-f2b6-44b2-b62f-0a5c394cfbfe}" Method="IArchivable">
-            <Single Name="HierarchicalPropertiesDataEntryName" Type="string">InputLabels</Single>
-            <Single Name="HierarchicalPropertiesDataEntryTextId" Type="string"></Single>
-            <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string">setInputLabels</Single>
-            <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
-            <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">1</Single>
-            <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
-            <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
-            <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
-              <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
-              <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
-            </Single>
-          </Single>
-        </Single>
         <Single Type="{b57c9aeb-85b7-4036-8619-1833751648fc}" Method="IArchivable">
           <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">12</Single>
           <List2 Name="HierarchicalRootNodeChildren">
-            <Single Type="{1626d958-cc88-4833-ad94-2fe3d1ca1a4a}" Method="IArchivable">
-              <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">13</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">12</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Eigenschaft</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseDataEntry" Type="{36c29c7f-f2b6-44b2-b62f-0a5c394cfbfe}" Method="IArchivable">
-                <Single Name="HierarchicalPropertiesDataEntryName" Type="string">label</Single>
-                <Single Name="HierarchicalPropertiesDataEntryTextId" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string">setDatasetLabel</Single>
-                <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">1</Single>
-                <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
-                <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
-                  <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
-                  <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
-                </Single>
-              </Single>
-            </Single>
-            <Single Type="{1626d958-cc88-4833-ad94-2fe3d1ca1a4a}" Method="IArchivable">
-              <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">14</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">12</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Eigenschaft</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseDataEntry" Type="{36c29c7f-f2b6-44b2-b62f-0a5c394cfbfe}" Method="IArchivable">
-                <Single Name="HierarchicalPropertiesDataEntryName" Type="string">data</Single>
-                <Single Name="HierarchicalPropertiesDataEntryTextId" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string">setDatasetData</Single>
-                <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">1</Single>
-                <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
-                <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
-                  <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
-                  <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
-                </Single>
-              </Single>
-            </Single>
-            <Single Type="{1626d958-cc88-4833-ad94-2fe3d1ca1a4a}" Method="IArchivable">
-              <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">15</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">12</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Eigenschaft</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseDataEntry" Type="{36c29c7f-f2b6-44b2-b62f-0a5c394cfbfe}" Method="IArchivable">
-                <Single Name="HierarchicalPropertiesDataEntryName" Type="string">borderColor</Single>
-                <Single Name="HierarchicalPropertiesDataEntryTextId" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string">setDatasetBorderColor</Single>
-                <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">1</Single>
-                <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
-                <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
-                  <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
-                  <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
-                </Single>
-              </Single>
-            </Single>
-            <Single Type="{1626d958-cc88-4833-ad94-2fe3d1ca1a4a}" Method="IArchivable">
-              <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">16</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">12</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Eigenschaft</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseDataEntry" Type="{36c29c7f-f2b6-44b2-b62f-0a5c394cfbfe}" Method="IArchivable">
-                <Single Name="HierarchicalPropertiesDataEntryName" Type="string">fill</Single>
-                <Single Name="HierarchicalPropertiesDataEntryTextId" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string">setDatasetFill</Single>
-                <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">1</Single>
-                <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
-                <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
-                  <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
-                  <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
-                </Single>
-              </Single>
-            </Single>
-            <Single Type="{1626d958-cc88-4833-ad94-2fe3d1ca1a4a}" Method="IArchivable">
-              <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">17</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">12</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseNodeName" Type="string">Eigenschaft</Single>
-              <Single Name="HierarchicalPropertiesNodeBaseDataEntry" Type="{36c29c7f-f2b6-44b2-b62f-0a5c394cfbfe}" Method="IArchivable">
-                <Single Name="HierarchicalPropertiesDataEntryName" Type="string">NumberOfData</Single>
-                <Single Name="HierarchicalPropertiesDataEntryTextId" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryVariable" Type="string">setNumberOfData</Single>
-                <Single Name="HierarchicalPropertiesDataEntryDescriptionId" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryPropertyType" Type="int">1</Single>
-                <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
-                <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
-                <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
-                  <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
-                  <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
-                </Single>
-              </Single>
-            </Single>
             <Single Type="{1626d958-cc88-4833-ad94-2fe3d1ca1a4a}" Method="IArchivable">
               <Single Name="HierarchicalPropertiesNodeBaseNodeId" Type="long">19</Single>
               <Single Name="HierarchicalPropertiesNodeBaseParent" Type="long">12</Single>

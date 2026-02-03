@@ -1,44 +1,45 @@
 var TableElementWrapper;
 
 (function () {
-	/* HTML5 control wrapper for DataTables */
+	/* HTML5 control wrapper for Grid.js Table */
 	TableElementWrapper = function (idGenerator) {
+		console.log("TableElementWrapper v1.1 - Indexed Resources");
 		this.domNode = document.createElement("div");
 		this.domNode.className = "table-container";
 		this.domNode.style.width = "100%";
 		this.domNode.style.height = "100%";
 		this.domNode.style.position = "relative";
-		this.domNode.style.overflow = "hidden"; // DataTables handles scrolling usually
+		this.domNode.style.overflow = "auto";
+		// User requested font-style
+		this.domNode.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+		this.domNode.style.color = "#333333"; // Ensure text is visible
 
-		// Create table element
-		this.tableNode = document.createElement("table");
-		this.tableNode.id = "table_" + idGenerator.getId(); // Unique ID
-		this.tableNode.className = "display";
-		this.tableNode.style.width = "100%";
-		this.domNode.appendChild(this.tableNode);
+		// Use robust ID generation just in case, but follow template flow
+		var elementId = "grid_" + new Date().getTime();
+		try {
+			if (idGenerator) {
+				if (typeof idGenerator.getId === 'function') elementId = "grid_" + idGenerator.getId();
+				else if (typeof idGenerator.GetId === 'function') elementId = "grid_" + idGenerator.GetId();
+				else if (typeof idGenerator === 'string') elementId = idGenerator;
+			}
+		} catch (e) { console.warn("ID Gen Error", e); }
+		this.domNode.id = elementId;
 
 		document.body.appendChild(this.domNode);
 
 		var self = this;
-		this.table = null;
+		this.grid = null;
 
-		// Buffer object to hold data arriving before lib init
+		// Buffer object to hold data arriving before init
 		this.pendingData = {
 			columns: null,
-			data: null
+			data: null,
+			style: "display",
+			opacity: 1.0,
+			alarms: null
 		};
 
-		// Determine path to current script to load siblings
-		var scriptPath = "";
-		try {
-			// Attempt to find the script path for this control
-			// This is a heuristic; might need adjustment based on Codesys generic loading
-			// Often scripts are loaded via XHR or injected. 
-			// If injected, document.currentScript might not work reliably or point to something else.
-			// We'll try a relative path first.
-			scriptPath = "";
-		} catch (e) { }
-
+		// Helper to load resources
 		this.loadResources(function () {
 			self.initTable();
 		});
@@ -46,275 +47,184 @@ var TableElementWrapper;
 
 	TableElementWrapper.prototype = {
 		loadResources: function (callback) {
-			var self = this;
 			var head = document.getElementsByTagName('head')[0];
 
-			// Helper to load CSS
+			// Determine base path from script src
+			var basePath = "";
+			var scripts = document.getElementsByTagName('script');
+			for (var i = 0; i < scripts.length; i++) {
+				// Looser check for ElementWrapper to handle renaming (e.g. ElementWrapper2.js)
+				if (scripts[i].src && scripts[i].src.indexOf('ElementWrapper') !== -1) {
+					var src = scripts[i].src;
+					basePath = src.substring(0, src.lastIndexOf('/') + 1);
+					break;
+				}
+			}
+
 			function loadCSS(href) {
-				if (document.querySelector('link[href="' + href + '"]')) return;
+				var fullHref = basePath + href;
+				if (document.querySelector('link[href="' + fullHref + '"]')) return;
 				var link = document.createElement('link');
 				link.rel = 'stylesheet';
 				link.type = 'text/css';
-				link.href = href;
+				link.href = fullHref;
 				head.appendChild(link);
 			}
-
-			// Helper to load JS
 			function loadJS(src, onLoad) {
+				if (typeof gridjs !== 'undefined') { onLoad(); return; }
 				var script = document.createElement('script');
-				script.type = 'text/javascript';
-				script.src = src;
+				script.src = basePath + src;
 				script.onload = onLoad;
-				script.onerror = function () { console.error("Failed to load script: " + src); };
 				head.appendChild(script);
 			}
 
-			loadCSS('dataTables.dataTables.min.css');
-
-			// Function to load DataTables after jQuery is ready
-			var loadDataTables = function () {
-				if (typeof DataTable === 'undefined' && typeof $.fn.DataTable === 'undefined') {
-					loadJS('dataTables.js', callback);
-				} else {
-					callback();
-				}
-			};
-
-			// Load jQuery if not present
-			if (typeof jQuery === 'undefined') {
-				loadJS('jquery.min.js', loadDataTables);
-			} else {
-				loadDataTables();
-			}
+			// Resources are renamed by Codesys with their index in XML
+			loadCSS('mermaid.min4.css');
+			loadJS('gridjs.umd3.js', callback);
+			// TableStyles.css is index 5 -> TableStyles5.css
+			loadCSS('TableStyles5.css');
+			loadCSS('tailwind-ui.min6.css');
 		},
 
 		initTable: function () {
-			if (typeof DataTable === 'undefined') {
-				this.domNode.innerHTML = "DataTables library not loaded!";
+			if (typeof gridjs === 'undefined') {
+				this.domNode.innerHTML = "Grid.js library not loaded!";
 				return;
 			}
 
-			var options = {
-				// Default options
-				responsive: true,
-				destroy: true, // Allow re-initialization
+			var config = {
+				columns: ["No Data"],
 				data: [],
-				columns: [{ title: "No Data" }] // Placeholder
+				search: true,
+				sort: true,
+				pagination: true,
+				resizable: true,
+				className: {
+					table: this.pendingData.style || 'display'
+				}
 			};
 
-			// Apply pending columns if available
-			if (this.pendingData.columns) {
-				options.columns = this.pendingData.columns;
+			// Apply pending data
+			if (this.pendingData.columns) config.columns = this.pendingData.columns;
+			if (this.pendingData.data) config.data = this.pendingData.data;
+
+			// Alarms take precedence if present
+			if (this.pendingData.alarms) {
+				var alarmCfg = this._processAlarms(this.pendingData.alarms);
+				if (alarmCfg) {
+					config.columns = alarmCfg.columns;
+					config.data = alarmCfg.data;
+				}
 			}
 
-			// Apply pending data if available
-			if (this.pendingData.data) {
-				options.data = this.pendingData.data;
-			}
+			this.grid = new gridjs.Grid(config).render(this.domNode);
 
-			// Apply pending style if available (default to 'display')
-			if (this.pendingData.style) {
-				this.tableNode.className = this.pendingData.style;
-			} else if (!this.tableNode.className) {
-				this.tableNode.className = "display";
-			}
-
-			this.table = new DataTable(this.tableNode, options);
+			// Apply Opacity
+			this.setOpacity(this.pendingData.opacity);
 
 			this.pendingData = null;
 		},
 
+		setText: function (value) { },
+		setColor: function (value) { },
+		setFont: function (value, type, typeid) { },
+
+		setInputLabels: function (value) {
+			try {
+				var columns = typeof value === 'string' ? JSON.parse(value) : value;
+				if (this.grid) {
+					this.grid.updateConfig({ columns: columns }).forceRender();
+				} else {
+					this.pendingData.columns = columns;
+				}
+			} catch (e) { console.error("Invalid InputLabels:", e); }
+		},
+
+		setDatasetLabel: function (value) { },
+
+		setDatasetData: function (value) {
+			try {
+				var data = typeof value === 'string' ? JSON.parse(value) : value;
+				if (this.grid) {
+					this.grid.updateConfig({ data: data }).forceRender();
+				} else {
+					this.pendingData.data = data;
+				}
+			} catch (e) { console.error("Invalid DatasetData:", e); }
+		},
+
+		setDatasetBorderColor: function (value) { },
+		setDatasetFill: function (value) { },
+		setNumberOfData: function (value) { },
+
+		// Custom Methods
 		setTableStyle: function (value) {
-			// value e.g. "display compact cell-border"
-			if (this.tableNode) {
-				this.tableNode.className = value;
-			}
-			// If table exists, style change usually applies immediately via CSS class
-			// No need to re-draw usually, unless sizing changes significantly? 
-			// DataTables might calculate widths, so a redraw is safer.
-			if (this.table) {
-				this.table.columns.adjust().draw();
+			if (this.grid) {
+				this.grid.updateConfig({ className: { table: value } }).forceRender();
 			} else {
-				if (!this.pendingData) this.pendingData = {};
 				this.pendingData.style = value;
 			}
 		},
 
-		setAlarms: function (value) {
-			console.log("Table: setAlarms called");
-			var entries = [];
-
-			try {
-				// Handle JSON string or Object
-				if (typeof value === 'string') {
-					if (value.trim() === "") return;
-					value = JSON.parse(value);
-				}
-
-				// Extract array from STRUCT { ALARMS: [...] }
-				if (value && Array.isArray(value.ALARMS)) {
-					entries = value.ALARMS;
-				} else if (Array.isArray(value)) {
-					entries = value;
-				} else {
-					console.warn("Table: setAlarms expected object with ALARMS array or array.");
-					return;
-				}
-			} catch (e) {
-				console.error("Invalid Alarms Data:", e);
-				return;
-			}
-
-			// Define Columns for Alarms
-			var columns = [
-				{ title: "Description", data: "Description", defaultContent: "" },
-				{ title: "ID", data: "ID", defaultContent: "" },
-				{ title: "Equip ID", data: "EQUIP_ID", defaultContent: "" },
-				{ title: "Value", data: "Value", defaultContent: false },
-				{ title: "Timestamp", data: "TIMESTAMP", defaultContent: "" }
-			];
-
-			// Filter out empty entries if needed? 
-			// CODESYS arrays are fixed size, so we might have many empty entries.
-			// Check if ID is empty or Description is empty to filter
-			entries = entries.filter(function (e) {
-				return e.ID !== "" && e.ID !== null && e.ID !== undefined;
-			});
-
-			if (this.table) {
-				var currentData = this.table.data().toArray();
-				// We need to re-init to change columns if they were different
-				// Since we are switching to Alarms mode, we enforce Alarms columns.
-				this.table.destroy();
-				this.tableNode.innerHTML = "";
-
-				this.table = new DataTable(this.tableNode, {
-					data: entries,
-					columns: columns,
-					destroy: true
-				});
-			} else {
-				if (!this.pendingData) this.pendingData = {};
-				this.pendingData.data = entries;
-				this.pendingData.columns = columns;
-			}
-		},
-
 		setOpacity: function (value) {
-			// value can be number (0-1) or string "0.5" or "50" depending on Codesys mapping
-			// Assuming 0.0 to 1.0
 			var op = parseFloat(value);
-			if (!isNaN(op)) {
-				// Determine if user sends 0-100 or 0-1. Usually Opacity property is 0-255 or 0-100 in Visu?
-				// Standard HTML5 control opacity is 0-1.
-				// If value > 1, assume 0-100 or 0-255. 
-				// Let's assume 0-1 for now, but handle > 1 by dividing.
-				if (op > 1) op = op / 100.0;
-				if (op > 1) op = 1; // Cap at 1
-				if (op < 0) op = 0;
+			if (isNaN(op)) return;
+			if (op > 1) op = op / 100.0;
+			if (op > 1) op = 1; else if (op < 0) op = 0;
 
-				this.domNode.style.opacity = op;
-			}
+			this.domNode.style.opacity = op;
+			if (!this.grid) this.pendingData.opacity = op;
 		},
 
-		// Map 'InputLabels' property to Columns
-		// Expected format: ["Col1", "Col2"] or JSON string
-		setInputLabels: function (value) {
-			console.log("Table: setInputLabels called", value);
-			var columns = [];
+		_processAlarms: function (value) {
+			console.log("TableElementWrapper._processAlarms: Processing value", value);
+			var entries = [];
 			try {
-				if (typeof value === 'string') {
-					if (value.trim().startsWith('[')) {
-						var parsed = JSON.parse(value);
-						// Convert ["Name", "Age"] to [{title:"Name"}, {title:"Age"}]
-						columns = parsed.map(function (c) {
-							return (typeof c === 'string') ? { title: c } : c;
-						});
-					} else {
-						// Comma separated
-						columns = value.split(',').map(function (c) { return { title: c.trim() }; });
-					}
-				}
+				var raw = value;
+				if (typeof raw === 'string' && raw.trim() !== "") raw = JSON.parse(raw);
+				if (raw && Array.isArray(raw.ALARMS)) entries = raw.ALARMS;
+				else if (Array.isArray(raw)) entries = raw;
+				console.log("TableElementWrapper._processAlarms: Extracted entries", entries);
 			} catch (e) {
-				console.error("Invalid Columns Data:", e);
+				console.error("TableElementWrapper._processAlarms: Error parsing", e);
+				return null;
+			}
+
+			entries = entries.filter(function (e) { return e.ID; });
+			console.log("TableElementWrapper._processAlarms: Filtered entries", entries);
+
+			return {
+				columns: [
+					{ name: "Description", id: "Description" },
+					{ name: "ID", id: "ID" },
+					{ name: "Equip ID", id: "EQUIP_ID" },
+					{ name: "Value", id: "Value" },
+					{ name: "Timestamp", id: "TIMESTAMP" }
+				],
+				data: entries
+			};
+		},
+
+		setAlarms: function (value) {
+			console.log("TableElementWrapper.setAlarms called with:", value);
+			var cfg = this._processAlarms(value);
+			if (!cfg) {
+				console.warn("TableElementWrapper.setAlarms: Invalid configuration generated.");
 				return;
 			}
 
-			if (this.table) {
-				// DataTables doesn't support changing columns easily on the fly without destroy
-				// We will re-init or just ignore if structure changes significantly,
-				// But normally we destroy and recreate for structure alignment.
-				// However, destroying loses state.
-				// For now, let's assume columns are set once or trigger full reload.
-
-				// If we must update columns, we often need to destroy and re-init.
-				// We'll store current data, destroy, and re-init.
-				var currentData = this.table.data().toArray();
-				this.table.destroy();
-				this.tableNode.innerHTML = ""; // Clear header/body
-
-				this.table = new DataTable(this.tableNode, {
-					columns: columns,
-					data: currentData,
-					destroy: true
-				});
+			if (this.grid) {
+				this.grid.updateConfig({
+					columns: cfg.columns,
+					data: cfg.data
+				}).forceRender();
 			} else {
-				if (!this.pendingData) this.pendingData = {};
-				this.pendingData.columns = columns;
+				console.log("TableElementWrapper.setAlarms: Grid not ready, buffering data.");
+				this.pendingData.alarms = value;
 			}
-		},
-
-		// Map 'data' (setDatasetData) property to Table Data
-		// Expected format: [[val1, val2], [val3, val4]] or JSON string
-		setDatasetData: function (value) {
-			// console.log("Table: setDatasetData called");
-			var data = [];
-
-			try {
-				// Handle JSON string
-				if (typeof value === 'string') {
-					var trimmed = value.trim();
-					if (trimmed === "") {
-						data = [];
-					} else {
-						if (!trimmed.startsWith('[')) {
-							// Maybe comma separated list? Unlikely for 2D table.
-							// Treat as single row? Or error.
-							console.warn("Table: Data string should be JSON Array of Arrays.");
-							return;
-						}
-						data = JSON.parse(trimmed);
-					}
-				} else if (Array.isArray(value)) {
-					data = value;
-				}
-			} catch (e) {
-				console.error("Invalid Table Data JSON:", e);
-				return;
-			}
-
-			if (this.table) {
-				this.table.clear();
-				this.table.rows.add(data);
-				this.table.draw();
-			} else {
-				this.pendingData.data = data;
-			}
-		},
-
-		// Keep other methods as stubs or map them if applicable
-		setText: function (value) {
-			// Could be table caption or title
-		},
-		setColor: function (value) { },
-		setFont: function (value, type, typeid) { },
-		setDatasetLabel: function (value) { },
-		setDatasetBorderColor: function (value) { },
-		setDatasetFill: function (value) { },
-		setNumberOfData: function (value) { }
+		}
 	};
 
-	// Explicitly export to window to ensure global availability
+	// Explicit export
 	window.TableElementWrapper = TableElementWrapper;
-	console.log("TableElementWrapper module loaded.");
 }());
