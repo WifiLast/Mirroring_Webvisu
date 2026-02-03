@@ -206,7 +206,7 @@
         <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
         <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
         <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
-          <Single Name="HierarchicalGenericValue_Value" Type="string">display</Single>
+          <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
           <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
         </Single>
       </Single>
@@ -230,7 +230,7 @@
                 <Single Name="HierarchicalPropertiesDataEntryVariableType" Type="string"></Single>
                 <Single Name="HierarchicalPropertiesDataEntryMappingType" Type="int">0</Single>
                 <Single Name="HierarchicalGenericValue" Type="{d0c829a1-7995-459f-862b-f92b21ac994f}" Method="IArchivable">
-                  <Single Name="HierarchicalGenericValue_Value" Type="string"></Single>
+                  <Single Name="HierarchicalGenericValue_Value" Type="string">PLC_PRG.myAlarms</Single>
                   <Single Name="HierarchicalGenericValue_EditorType" Type="int">1</Single>
                 </Single>
               </Single>

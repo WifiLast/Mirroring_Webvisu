@@ -85,18 +85,9 @@ var TableElementWrapper;
 		font-size: 1em !important;
 		font-weight: bold !important;
 		border-radius: 0 !important;
-		border: none !important;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
-		border-right: 1px solid rgba(255, 255, 255, 0.4) !important;
-		white-space: normal !important;
-		word-wrap: break-word !important;
 	}
 	.gridjs-td {
 		padding: 16px 12px !important;
-		border: none !important;
-	}
-	.gridjs-tr {
-		border: none !important;
 	}
 	`;
 		document.head.appendChild(style);
@@ -380,10 +371,10 @@ var TableElementWrapper;
 
 			return {
 				columns: [
-					{ name: "Time Stamp", id: "TIMESTAMP", width: "10%" },
-					{ name: "Plant Nr.", id: "ID", width: "10%" },
-					{ name: "Equipment ID", id: "EQUIP_ID", width: "20%" },
-					{ name: "Description", id: "Description", width: "60%" }
+					{ name: "Time Stamp", id: "TIMESTAMP" },
+					{ name: "Plant Nr.", id: "ID" },
+					{ name: "Equipment ID", id: "EQUIP_ID" },
+					{ name: "Description", id: "Description", width: "70%" }
 				],
 				data: entries
 			};
