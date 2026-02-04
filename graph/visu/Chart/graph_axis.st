@@ -1,8 +1,9 @@
 TYPE GRAPH_AXIS :
 STRUCT
-	label: WSTRING;
-	data: ARRAY[0..172803] OF REAL;
-	borderColor : WSTRING;
-	fill : WSTRING;
+	sLabel: STRING;
+	aData: ARRAY[0..1000] OF REAL;
+    diNumOfData : DINT;
+	sBorderColor : STRING;
+	xFill : BOOL;
 END_STRUCT
 END_TYPE

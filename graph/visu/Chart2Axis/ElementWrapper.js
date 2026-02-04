@@ -112,21 +112,6 @@ var LineChart2ElementWrapper;
 			try {
 				var labels = JSON.parse(value);
 				if (Array.isArray(labels)) {
-					// --- Formatting Logic ---
-					var self = this;
-					labels = labels.map(function (lbl) {
-						if (typeof lbl === 'string' && lbl.indexOf('DT#') !== -1) {
-							var dt = self.parseCodesysTime(lbl);
-							if (dt) {
-								var hours = dt.getHours().toString().padStart(2, '0');
-								var minutes = dt.getMinutes().toString().padStart(2, '0');
-								return hours + ':' + minutes;
-							}
-						}
-						return lbl;
-					});
-					// ------------------------
-
 					if (this.chart) {
 						this.chart.data.labels = labels;
 						this.chart.update();
