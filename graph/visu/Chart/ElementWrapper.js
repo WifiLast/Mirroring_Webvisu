@@ -108,36 +108,95 @@ var LineChart2ElementWrapper;
 		setFont: function (value, type, typeid) { },
 
 		setInputLabels: function (value) {
-			console.log("LineChart: setInputLabels called", String(value).substring(0, 100) + "...");
+			// console.log("LineChart: setInputLabels called", String(value).substring(0, 100) + "...");
+			var labels = [];
 			try {
-				var labels = JSON.parse(value);
-				if (Array.isArray(labels)) {
-					// --- Formatting Logic ---
-					var self = this;
-					labels = labels.map(function (lbl) {
-						if (typeof lbl === 'string' && lbl.indexOf('DT#') !== -1) {
-							var dt = self.parseCodesysTime(lbl);
-							if (dt) {
-								var hours = dt.getHours().toString().padStart(2, '0');
-								var minutes = dt.getMinutes().toString().padStart(2, '0');
-								return hours + ':' + minutes;
-							}
-						}
-						return lbl;
-					});
-					// ------------------------
+				if (Array.isArray(value)) {
+					labels = value;
+				} else {
+					labels = JSON.parse(value);
+				}
 
-					if (this.chart) {
-						this.chart.data.labels = labels;
-						this.chart.update();
-					} else {
-						// Buffer
-						this.pendingData.labels = labels;
-					}
+				if (Array.isArray(labels)) {
+					// Store raw labels for filtering
+					this.rawLabels = labels;
+					this.updateVisibleData();
 				}
 			} catch (e) {
-				console.error("Invalid Labels JSON:", e);
+				console.error("Invalid Labels Data:", e);
 			}
+		},
+
+		setTimeWindow: function (value) {
+			console.log("LineChart: setTimeWindow called with value: " + value);
+			this.timeWindow = parseInt(value, 10);
+			if (isNaN(this.timeWindow) || this.timeWindow <= 0) {
+				this.timeWindow = 1800; // Default 30 min
+			}
+			this.updateVisibleData();
+		},
+
+		updateVisibleData: function () {
+			if (!this.rawLabels || !this.rawData || !this.chart) return;
+
+			var windowSeconds = this.timeWindow || 1800; // Default 30 min
+
+			// Process Labels and find start index
+			var processedLabels = [];
+			var processedData = [];
+
+			// 1. Convert last label to time to define window end (assuming sorted)
+			// Need to parse timestamps first to perform logic
+			var parsedTimestamps = [];
+			var self = this;
+
+			this.rawLabels.forEach(function (lbl) {
+				var dt = null;
+				if (typeof lbl === 'string' && lbl.indexOf('DT#') !== -1) {
+					dt = self.parseCodesysTime(lbl);
+				} else if (typeof lbl === 'string') {
+					// Try standard date parse if not DT#
+					dt = new Date(lbl);
+				} else if (lbl instanceof Date) {
+					dt = lbl;
+				}
+				parsedTimestamps.push(dt);
+			});
+
+			// Determine window
+			// Find max time (usually the last one)
+			var validTimes = parsedTimestamps.filter(t => t instanceof Date && !isNaN(t));
+			if (validTimes.length === 0) {
+				// If no valid time, show all (fallback)
+				processedLabels = this.rawLabels;
+				processedData = this.rawData;
+			} else {
+				var maxTime = validTimes[validTimes.length - 1]; // Last point is current
+				var cutoffTime = new Date(maxTime.getTime() - (windowSeconds * 1000));
+
+				// Filter
+				for (var i = 0; i < parsedTimestamps.length; i++) {
+					var t = parsedTimestamps[i];
+					if (t && t >= cutoffTime) {
+						// Keep this point
+						// Format Label: HH:mm
+						var hours = t.getHours().toString().padStart(2, '0');
+						var minutes = t.getMinutes().toString().padStart(2, '0');
+						processedLabels.push(hours + ':' + minutes);
+
+						// Push corresponding data if exists
+						if (i < this.rawData.length) {
+							processedData.push(this.rawData[i]);
+						}
+					}
+				}
+			}
+
+			// Update Chart
+			this.chart.data.labels = processedLabels;
+			this._ensureDataset();
+			this.chart.data.datasets[0].data = processedData;
+			this.chart.update();
 		},
 
 		_ensureDataset: function () {
@@ -192,56 +251,11 @@ var LineChart2ElementWrapper;
 				return;
 			}
 
-			// 1.5 Slicing Logic (Limit to NumberOfData)
-			if (this.currentNumberOfData > 0 && Array.isArray(data) && data.length > this.currentNumberOfData) {
-				// console.log("LineChart update: Slicing data to " + this.currentNumberOfData);
-				data = data.slice(0, this.currentNumberOfData);
-			}
-
-			// 2. Downsampling / Optimization Logic
-			// Chart.js can handle a few thousand points, but 170k+ will kill it.
-			// Simple LTTB (Largest-Triangle-Three-Buckets) or just Nth-sampling is needed.
-			// Here we use simple Nth-sampling for performance.
-			var MAX_POINTS = 5000;
-			if (data && data.length > MAX_POINTS) {
-				console.warn("LineChart: Data length (" + data.length + ") exceeds limit (" + MAX_POINTS + "). Downsampling.");
-				var sampledData = [];
-				var step = Math.ceil(data.length / MAX_POINTS);
-				for (var i = 0; i < data.length; i += step) {
-					sampledData.push(data[i]);
-				}
-				data = sampledData;
-			}
-
-			// 3. Update Chart
-			if (Array.isArray(data)) {
-				if (this.chart) {
-					this._ensureDataset();
-					this.chart.data.datasets[0].data = data;
-
-					// Auto-generate labels if mismatch
-					if (this.chart.data.labels && this.chart.data.labels.length !== data.length) {
-						// If we have significantly more data than labels, we might want to just show indices or empty labels
-						// to ensure the line renders correctly from left to right.
-						// However, if labels are meant to be sparse, Chart.js needs equal length for 'category' axis.
-						// We will generate numeric indices as labels to match data length if labels are missing/short.
-						var diff = data.length - this.chart.data.labels.length;
-						if (diff > 0) {
-							// Regenerate labels as simple indices if we don't have enough
-							// Or just fill the rest?
-							// Best approach: If mismatch is huge, replace labels entirely with indices
-							if (this.chart.data.labels.length < data.length / 2) {
-								this.chart.data.labels = data.map(function (_, i) { return i; });
-							}
-						}
-					}
-
-					this.chart.update();
-				} else {
-					this.pendingData.dataset.data = data;
-				}
-			}
+			// Store Raw Data
+			this.rawData = data;
+			this.updateVisibleData();
 		},
+
 
 		setDatasetBorderColor: function (value) {
 			console.log("LineChart: setDatasetBorderColor called", value);

@@ -19,29 +19,55 @@ VAR
     dtNow : DT := DT#2023-10-27-10:00:00;
     stLocal_TimeStamp : SysTime; 
     
-    // Timer for generating data (Fast: 100ms)
-    fbDataTimer : TON := (PT := T#100MS);
+    // Timer for generating data
+    fbDataTimer : TON;
+    tInterval : TIME := T#10S; // Fixed Data Acquisition Rate
     
     iCount : INT := 0;
+    
+    // Resolution Control
+    // 0: 30m, 1: 15m, 2: 1h, 3: 6h, 4: 12h, 5: 24h, 6: 48h
+    iResolutionMode : INT := 0; 
+    iTimeWindow : DINT := 1800; // Time Window in Seconds passed to Chart
     
     // Chart Data Struct (Humidity)
     axisHumidity : GRAPH_AXIS;
     
-    // Chart Time Buffer (Last 20 points)
-    aTimeHistory : ARRAY[0..19] OF DT; // 0-indexed to match typical array usage if preferred, but keeping explicit loop
+    // Chart Time Buffer (Last 1000 points)
+    aTimeHistory : ARRAY[0..999] OF DT; 
     
-    // Chart JSON Strings
-    sChartData : STRING(2000);   // " [22.5, 23.1, ...] "
-    sChartLabels : STRING(2000); // " ["DT#...", "DT#..."] "
+    // Chart JSON Strings (Not needed if mapping arrays directly)
+    // sChartData : STRING(2000);   
+    // sChartLabels : STRING(2000); 
     
     // Helpers
     i : INT;
     sTemp : STRING(50);
+
+    udiUTC_DateAndTime : UDINT;
+	udiLocal_DateAndTime : UDINT;
 END_VAR
 
-dtNow := TO_DT(stLocal_TimeStamp / TIME_TO_ULINT(TIME#1MS)); // DT#2018-6-6-10:24:54
-// Trigger write every 100ms
-fbDataTimer(IN := NOT fbDataTimer.Q);
+udiUTC_DateAndTime := TO_UDINT(SysTimeRtcGet(Result)); // UDINT#1528268918
+Result := SysTimeRTCConvertUTCToLocal(udiUTC_DateAndTime, udiLocal_DateAndTime);
+dtNow := TO_DT(udiLocal_DateAndTime);
+
+// Set Time Window based on Selection (Resolution Mode now controls Zoom, not Acquisition)
+CASE iResolutionMode OF
+    0: iTimeWindow := 1800;   // 30 min
+    1: iTimeWindow := 900;    // 15 min
+    2: iTimeWindow := 3600;   // 1 h
+    3: iTimeWindow := 21600;  // 6 h
+    4: iTimeWindow := 43200;  // 12 h
+    5: iTimeWindow := 86400;  // 24 h
+    6: iTimeWindow := 172800; // 48 h
+    ELSE iTimeWindow := 1800;
+END_CASE
+
+// Fixed Data Acquisition
+fbDataTimer(IN := NOT fbDataTimer.Q, PT := tInterval);
+
+// Trigger write
 IF fbDataTimer.Q THEN
     xTriggerWrite := TRUE;
     
@@ -56,55 +82,30 @@ IF fbDataTimer.Q THEN
     IF rPressure > 1020 THEN rPressure := 1000; END_IF
     
     // --- Update Chart History Buffer (Humidity) ---
-    // Initialize Styles once (or cyclically, doesn't matter)
     axisHumidity.sLabel := 'Humidity (%)';
     axisHumidity.sBorderColor := 'blue';
     axisHumidity.xFill := FALSE;
-    axisHumidity.diNumOfData := 20;
+    axisHumidity.diNumOfData := 1000;
 
-    // Shift older values (Size 20 buffer for demo)
-    // Note: aData is 0..1000. We use 0..19.
-    FOR i := 0 TO 18 DO
+    // Shift older values (Size 1000)
+    FOR i := 0 TO 998 DO
         axisHumidity.aData[i] := axisHumidity.aData[i+1];
         aTimeHistory[i] := aTimeHistory[i+1];
     END_FOR;
     // Add new value at end of buffer
-    axisHumidity.aData[19] := rHumidity;
-    aTimeHistory[19] := dtNow;
+    axisHumidity.aData[999] := rHumidity;
+    aTimeHistory[999] := dtNow;
     
-    // --- Generate JSON Strings ---
-    // 1. Data: [45.1, 45.2, ...]
-    sChartData := '[';
-    FOR i := 0 TO 19 DO
-        sChartData := CONCAT(sChartData, REAL_TO_STRING(axisHumidity.aData[i]));
-        IF i < 19 THEN sChartData := CONCAT(sChartData, ', '); END_IF;
-    END_FOR;
-    sChartData := CONCAT(sChartData, ']');
-    
-    // 2. Labels: ["10:00", "10:15", ...] - Optimized for length (<255 chars)
-    sChartLabels := '[';
-    FOR i := 0 TO 19 DO
-        // Convert to TOD and string: 'TOD#16:40:00'
-        sTemp := TOD_TO_STRING(DT_TO_TOD(aTimeHistory[i]));
-        // Remove 'TOD#' (4 chars)
-        sTemp := DELETE(sTemp, 4, 1);
-        // Keep only 'HH:mm' (5 chars)
-        sTemp := LEFT(sTemp, 5);
-        
-        sChartLabels := CONCAT(sChartLabels, '"');
-        sChartLabels := CONCAT(sChartLabels, sTemp);
-        sChartLabels := CONCAT(sChartLabels, '"');
-        IF i < 19 THEN sChartLabels := CONCAT(sChartLabels, ', '); END_IF;
-    END_FOR;
-    sChartLabels := CONCAT(sChartLabels, ']');
+    // NOTE: sChartData and sChartLabels JSON generation removed.
+    // Map axisHumidity.aData and aTimeHistory directly to Chart Properties.
     
     
-    // Update Aggregators (e.g. LAST_15M Average)
+    // Update Aggregators
     fbAggHum(xExecute := TRUE, rInput := rHumidity, eTimeSpan := E_TimeSpan.LAST_15M, eAggType := E_AggType.AGG_AVERAGE);
     fbAggTemp(xExecute := TRUE, rInput := rTemperature, eTimeSpan := E_TimeSpan.LAST_15M, eAggType := E_AggType.AGG_AVERAGE);
     fbAggPress(xExecute := TRUE, rInput := rPressure, eTimeSpan := E_TimeSpan.LAST_15M, eAggType := E_AggType.AGG_AVERAGE);
     
-    // Format Data using RAW Sensor Data
+    // Format Data for CSV
     sCSVHeader := 'Timestamp,Humidity,Temperature,Pressure';
     
     sMyData := DT_TO_STRING(dtNow);
@@ -126,7 +127,6 @@ ELSE
 END_IF
 
 // Call the CSV Writer
-// Buffer data every time xTriggerWrite is True (every 100ms)
 fbWriteCSV(
     xExecute := xTriggerWrite,
     sFileName := 'sensor_log.csv',
