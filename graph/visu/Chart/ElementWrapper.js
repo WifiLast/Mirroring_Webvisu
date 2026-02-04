@@ -106,13 +106,30 @@ var LineChart2ElementWrapper;
 							}
 						}
 					},
+					interaction: {
+						mode: 'index',
+						intersect: false,
+					},
 					plugins: {
 						legend: {
 							labels: {
 								font: {
-									size: 16 // Increased legend font size
+									size: 16
 								}
 							}
+						},
+						tooltip: {
+							titleFont: {
+								size: 18
+							},
+							bodyFont: {
+								size: 16
+							},
+							padding: 15,
+							displayColors: true,
+							boxWidth: 15,
+							titleSpacing: 5,
+							bodySpacing: 5
 						}
 					}
 				}
