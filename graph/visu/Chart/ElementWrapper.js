@@ -89,7 +89,32 @@ var LineChart2ElementWrapper;
 				},
 				options: {
 					responsive: true,
-					maintainAspectRatio: false
+					maintainAspectRatio: false,
+					scales: {
+						x: {
+							ticks: {
+								font: {
+									size: 14 // Increased font size
+								}
+							}
+						},
+						y: {
+							ticks: {
+								font: {
+									size: 14 // Increased font size
+								}
+							}
+						}
+					},
+					plugins: {
+						legend: {
+							labels: {
+								font: {
+									size: 16 // Increased legend font size
+								}
+							}
+						}
+					}
 				}
 			});
 
@@ -249,6 +274,16 @@ var LineChart2ElementWrapper;
 			} else {
 				console.error("LineChart: Invalid Data Type:", typeof value);
 				return;
+			}
+
+			// Round to 3 decimal places
+			if (data && Array.isArray(data)) {
+				data = data.map(function (num) {
+					if (typeof num === 'number') {
+						return parseFloat(num.toFixed(3));
+					}
+					return num;
+				});
 			}
 
 			// Store Raw Data
