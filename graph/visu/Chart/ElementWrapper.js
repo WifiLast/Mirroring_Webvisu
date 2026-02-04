@@ -268,6 +268,28 @@ var LineChart2ElementWrapper;
 			} else {
 				this.pendingData.dataset.fill = fillVal;
 			}
+		},
+
+		/* Helper: Convert Codesys DT string (DT#2018-6-6-10:24:54) to JS Date */
+		parseCodesysTime: function (sDT) {
+			if (!sDT || typeof sDT !== 'string') return null;
+			// Remove "DT#" prefix if present
+			var cleanStr = sDT.replace(/^DT#/, '');
+			// Format is usually YYYY-MM-DD-HH:mm:ss
+			// JS Date expects YYYY-MM-DDTHH:mm:ss (ISO) or similar
+			// Let's replace the 3rd dash with T? 
+			// Check format: 2018-6-6-10:24:54
+			// Split by '-'
+			var parts = cleanStr.split('-');
+			if (parts.length >= 4) {
+				var datePart = parts[0] + '-' + parts[1] + '-' + parts[2]; // 2018-6-6
+				var timePart = parts[3]; // 10:24:54
+				// Combine
+				var isoString = datePart + 'T' + timePart;
+				var d = new Date(isoString);
+				if (!isNaN(d.getTime())) return d;
+			}
+			return new Date(); // Fallback
 		}
 	};
 }());

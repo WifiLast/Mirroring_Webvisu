@@ -1,0 +1,6 @@
+{attribute 'qualified_only'}
+VAR_GLOBAL
+    rVisuTemperature : REAL;
+    dtVisuTimestamp : DT;
+    sVisuTimestampString : STRING(255); // String version for easier binding if needed
+END_VAR
