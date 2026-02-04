@@ -221,10 +221,11 @@ var LineChart2ElementWrapper;
 					var t = parsedTimestamps[i];
 					if (t && t >= cutoffTime) {
 						// Keep this point
-						// Format Label: HH:mm
+						// Format Label: HH:mm:ss
 						var hours = t.getHours().toString().padStart(2, '0');
 						var minutes = t.getMinutes().toString().padStart(2, '0');
-						processedLabels.push(hours + ':' + minutes);
+						var seconds = t.getSeconds().toString().padStart(2, '0');
+						processedLabels.push(hours + ':' + minutes + ':' + seconds);
 
 						// Push corresponding data if exists
 						if (i < this.rawData.length) {
