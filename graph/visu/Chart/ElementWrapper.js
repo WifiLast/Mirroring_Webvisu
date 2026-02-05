@@ -11,8 +11,12 @@ var LineChart2ElementWrapper;
 		this.domNode.style.backgroundColor = "#ffffff";
 
 		// Create canvas for Chart.js
+		// Create canvas for Chart.js
 		this.canvasFrom = document.createElement("canvas");
 		this.domNode.appendChild(this.canvasFrom);
+
+		// Create Time Interval Selector
+		this.createTimeSelector();
 
 		document.body.appendChild(this.domNode);
 
@@ -37,6 +41,45 @@ var LineChart2ElementWrapper;
 	};
 
 	LineChart2ElementWrapper.prototype = {
+		createTimeSelector: function () {
+			var self = this;
+			var select = document.createElement("select");
+			select.style.position = "absolute";
+			select.style.width = "100px";
+			select.style.top = "1px";
+			select.style.right = "1px";
+			select.style.zIndex = "100";
+			select.style.padding = "5px";
+			select.style.fontSize = "14px";
+			select.style.borderRadius = "4px";
+			select.style.border = "1px solid #ccc";
+
+			var options = [
+				{ val: 900, text: "15 min" },
+				{ val: 1800, text: "30 min" },
+				{ val: 3600, text: "1 hour" },
+				{ val: 21600, text: "6 hours" },
+				{ val: 43200, text: "12 hours" },
+				{ val: 86400, text: "24 hours" }
+			];
+
+			options.forEach(function (opt) {
+				var el = document.createElement("option");
+				el.value = opt.val;
+				el.innerText = opt.text;
+				if (opt.val === 1800) el.selected = true; // Default
+				select.appendChild(el);
+			});
+
+			select.onchange = function () {
+				self.timeWindow = parseInt(this.value, 10);
+				self.updateVisibleData();
+			};
+
+			this.domNode.appendChild(select);
+			this.timeSelector = select; // Save ref
+		},
+
 		initChart: function () {
 			if (typeof Chart === 'undefined') {
 				this.domNode.innerHTML = "Chart.js library not loaded!";
@@ -175,6 +218,12 @@ var LineChart2ElementWrapper;
 			if (isNaN(this.timeWindow) || this.timeWindow <= 0) {
 				this.timeWindow = 1800; // Default 30 min
 			}
+
+			// Sync Selector if exists
+			if (this.timeSelector) {
+				this.timeSelector.value = this.timeWindow;
+			}
+
 			this.updateVisibleData();
 		},
 
@@ -354,22 +403,37 @@ var LineChart2ElementWrapper;
 		},
 
 		/* Helper: Convert Codesys DT string (DT#2018-6-6-10:24:54) to JS Date */
+		/* Helper: Convert Codesys DT string (DT#2018-6-6-10:24:54) to JS Date */
 		parseCodesysTime: function (sDT) {
 			if (!sDT || typeof sDT !== 'string') return null;
-			// Remove "DT#" prefix if present
+			// Remove "DT#" prefix
 			var cleanStr = sDT.replace(/^DT#/, '');
-			// Format is usually YYYY-MM-DD-HH:mm:ss
-			// JS Date expects YYYY-MM-DDTHH:mm:ss (ISO) or similar
-			// Let's replace the 3rd dash with T? 
-			// Check format: 2018-6-6-10:24:54
-			// Split by '-'
+
+			// Expected format: YYYY-MM-DD-HH:mm:ss
+			// Example: 2018-6-6-10:24:54
+
+			// Split by '-' to get date parts and time string
 			var parts = cleanStr.split('-');
 			if (parts.length >= 4) {
-				var datePart = parts[0] + '-' + parts[1] + '-' + parts[2]; // 2018-6-6
-				var timePart = parts[3]; // 10:24:54
-				// Combine
-				var isoString = datePart + 'T' + timePart;
-				var d = new Date(isoString);
+				var year = parseInt(parts[0], 10);
+				var month = parseInt(parts[1], 10) - 1; // JS months are 0-11
+				var day = parseInt(parts[2], 10);
+
+				// Time part is the last element ("10:24:54")
+				var timeStr = parts[3];
+				var timeParts = timeStr.split(':');
+
+				var hour = 0, min = 0, sec = 0;
+				if (timeParts.length >= 2) {
+					hour = parseInt(timeParts[0], 10);
+					min = parseInt(timeParts[1], 10);
+					if (timeParts.length >= 3) {
+						sec = parseInt(timeParts[2], 10);
+					}
+				}
+
+				// Constructor: new Date(year, monthIndex, day, hours, minutes, seconds) - treating as Local Time
+				var d = new Date(year, month, day, hour, min, sec);
 				if (!isNaN(d.getTime())) return d;
 			}
 			return new Date(); // Fallback
