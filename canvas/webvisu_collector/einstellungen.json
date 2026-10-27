@@ -1,0 +1,10 @@
+{
+    "_hinweis": "Standortwerte fuer Heaven. Pfade mit / schreiben (C:/Python312/python.exe). Nach jeder Aenderung pruefung_heaven.ps1 erneut laufen lassen.",
+    "sps_webvisu_url": "http://182.1.1.54/webvisu/webvisu.htm",
+    "collector_port": 8021,
+    "prometheus_host": "localhost",
+    "prometheus_port": 9092,
+    "python": "python",
+    "login_datei": "RLT_login.json",
+    "_login": "Anmeldung an der Visu (Datei mit username/password, relativ zu diesem Ordner). Leer lassen oder Eintrag loeschen = kein Login. Zugangsdaten nur in RLT_login.json (nicht einchecken)."
+}

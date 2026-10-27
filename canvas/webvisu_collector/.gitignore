@@ -1,0 +1,9 @@
+# Zugangsdaten fuer die Anmeldung an der Visu: nie einchecken
+RLT_login.json
+# Laufzeit-Ausgaben
+webvisu_client.log
+login_ergebnis.png
+login_fehler.png
+check_fehler.png
+discover_*/
+__pycache__/

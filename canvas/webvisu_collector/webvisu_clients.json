@@ -1,0 +1,1192 @@
+[
+  {
+    "name": "RLT010113",
+    "url": "http://182.1.1.54/webvisu/webvisu.htm",
+    "viewport": [
+      1280,
+      1024
+    ],
+    "read_interval": 2,
+    "poll_delay_ms": 20000,
+    "nav_delay_ms": 1000,
+    "home_clicks": [
+      {
+        "text": "Startseite"
+      }
+    ],
+    "expect_text": [
+      "RLT 010113",
+      "TA-Smart (RV001)"
+    ],
+    "anchors": [
+      {
+        "text": "TA-Smart (RV001)",
+        "x": 264,
+        "y": 19.0,
+        "align": "right"
+      },
+      {
+        "text": "DBF001",
+        "x": 1660,
+        "y": 127.0,
+        "align": "right"
+      },
+      {
+        "text": "FLT002",
+        "x": 264,
+        "y": 308.5,
+        "align": "right"
+      },
+      {
+        "text": "VOT002",
+        "x": 264,
+        "y": 564.5,
+        "align": "right"
+      },
+      {
+        "text": "Rel. Luftfeuchte RH008:",
+        "x": 585,
+        "y": 872.0,
+        "align": "left"
+      }
+    ],
+    "metrics": [
+      {
+        "gauge_name": "ART_dbf_paramDBF_IN_DBF_SOLL",
+        "rect": [
+          1496,
+          185,
+          109,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramDBF.IN_DBF_SOLL",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_mv_paramMV_RV_RV1_SOLL",
+        "rect": [
+          104,
+          220,
+          109,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramMV.RV_RV1_SOLL",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_PT005",
+        "rect": [
+          821,
+          825,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.PR_PT5_IST",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_PT005_SOLL",
+        "rect": [
+          1065,
+          825,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramPT.PR_PT5_SOLL",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_RH004",
+        "rect": [
+          821,
+          791,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.HI_RH4_IST",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_RH004_SOLL",
+        "rect": [
+          1065,
+          791,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramRH.HI_RH3_SOLL",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_TT001",
+        "rect": [
+          1109,
+          76,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.TI_TT1_IST",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_TT004",
+        "rect": [
+          822,
+          757,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.TI_TT4_IST",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_TT004_SOLL",
+        "rect": [
+          1065,
+          757,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramTT.TI_TT3_SOLL",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_TT008",
+        "rect": [
+          822,
+          723,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.TI_TT8_IST",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAQ_MV002",
+        "rect": [
+          104,
+          511,
+          109,
+          30
+        ],
+        "_variable": "GVL_IO_HwInterface.AI_010113_MV002_posFlap_SKALIERTr",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rMBI_RV001",
+        "rect": [
+          104,
+          257,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.RV_RV1_IST",
+        "_format": "%2.2f"
+      }
+    ],
+    "pages": [
+      {
+        "name": "Setup_TT2",
+        "every": 1800,
+        "settle": 60,
+        "clicks": [
+          {
+            "text": "Setup",
+            "then": "Temp"
+          },
+          {
+            "text": "Temp",
+            "then": "Parameter: Temperatursensoren"
+          },
+          {
+            "text": "I<",
+            "then": "Seite 1/4"
+          },
+          {
+            "text": ">",
+            "then": "Seite 2/4"
+          }
+        ],
+        "expect_text": [
+          "TT004 - Istwert"
+        ],
+        "anchors": [
+          {
+            "text": "TT004 - Istwert",
+            "x": 276,
+            "y": 82.5,
+            "align": "left"
+          },
+          {
+            "text": "TT004 - Alarmgrenze  (L)",
+            "x": 277,
+            "y": 399.5,
+            "align": "left"
+          },
+          {
+            "text": "TT004 - Betriebsstunden gesamt",
+            "x": 276,
+            "y": 508.5,
+            "align": "left"
+          },
+          {
+            "text": "TT004 - Alarmgrenze Betriebsstunden (H)",
+            "x": 276,
+            "y": 617.5,
+            "align": "left"
+          },
+          {
+            "text": "Seite 2/4",
+            "x": 831.5,
+            "y": 747.0,
+            "align": "center"
+          }
+        ],
+        "metrics": [
+          {
+            "gauge_name": "ART_rAI_TT004_H",
+            "rect": [
+              1126,
+              327,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramTT.TI_TT3_H",
+            "_format": "%2.2f °C"
+          },
+          {
+            "gauge_name": "ART_rAI_TT004_HH",
+            "rect": [
+              1126,
+              274,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramTT.TI_TT3_HH",
+            "_format": "%2.2f °C"
+          },
+          {
+            "gauge_name": "ART_rAI_TT004_L",
+            "rect": [
+              1126,
+              381,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramTT.TI_TT3_L",
+            "_format": "%2.2f °C"
+          },
+          {
+            "gauge_name": "ART_rAI_TT004_LL",
+            "rect": [
+              1126,
+              437,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramTT.TI_TT3_LL",
+            "_format": "%2.2f °C"
+          }
+        ]
+      },
+      {
+        "name": "Setup_TT4",
+        "every": 1800,
+        "settle": 60,
+        "clicks": [
+          {
+            "text": "Setup",
+            "then": "Temp"
+          },
+          {
+            "text": "Temp",
+            "then": "Parameter: Temperatursensoren"
+          },
+          {
+            "text": ">I",
+            "then": "Seite 4/4"
+          }
+        ],
+        "expect_text": [
+          "TT008 - Istwert"
+        ],
+        "anchors": [
+          {
+            "text": "TT008 - Istwert",
+            "x": 276,
+            "y": 149.5,
+            "align": "left"
+          },
+          {
+            "text": "TT008 - Alarmgrenze  (L)",
+            "x": 278,
+            "y": 369.5,
+            "align": "left"
+          },
+          {
+            "text": "TT008 - Betriebsstunden gesamt",
+            "x": 276,
+            "y": 478.5,
+            "align": "left"
+          },
+          {
+            "text": "TT008 - Alarmgrenze Betriebsstunden (H)",
+            "x": 276,
+            "y": 587.5,
+            "align": "left"
+          },
+          {
+            "text": "Seite 4/4",
+            "x": 831.5,
+            "y": 747.0,
+            "align": "center"
+          }
+        ],
+        "metrics": [
+          {
+            "gauge_name": "ART_rAI_TT008_H",
+            "rect": [
+              1127,
+              297,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramTT.TI_TT8_H",
+            "_format": "%2.2f °C"
+          },
+          {
+            "gauge_name": "ART_rAI_TT008_HH",
+            "rect": [
+              1127,
+              244,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramTT.TI_TT8_HH",
+            "_format": "%2.2f °C"
+          },
+          {
+            "gauge_name": "ART_test_paramTT_TI_TT8_L",
+            "rect": [
+              1127,
+              351,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramTT.TI_TT8_L",
+            "_format": "%2.2f °C"
+          },
+          {
+            "gauge_name": "ART_test_paramTT_TI_TT8_LL",
+            "rect": [
+              1127,
+              407,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramTT.TI_TT8_LL",
+            "_format": "%2.2f °C"
+          }
+        ]
+      },
+      {
+        "name": "Setup_RH2",
+        "every": 1800,
+        "settle": 60,
+        "clicks": [
+          {
+            "text": "Setup",
+            "then": "Feuchte"
+          },
+          {
+            "text": "Feuchte",
+            "then": "Parameter: Luftfeuchtetransmitter"
+          },
+          {
+            "text": "I<",
+            "then": "Seite 1/4"
+          },
+          {
+            "text": ">",
+            "then": "Seite 2/4"
+          }
+        ],
+        "expect_text": [
+          "RH004 - Istwert"
+        ],
+        "anchors": [
+          {
+            "text": "RH004 - Istwert",
+            "x": 276,
+            "y": 52.5,
+            "align": "left"
+          },
+          {
+            "text": "RH004 - Alarmgrenze  (H)",
+            "x": 276,
+            "y": 313.5,
+            "align": "left"
+          },
+          {
+            "text": "RH004 - Alarmgrenze  (LL)",
+            "x": 276,
+            "y": 422.5,
+            "align": "left"
+          },
+          {
+            "text": "RH004 - Alarmgrenze Betriebsstunden (HH)",
+            "x": 276,
+            "y": 533.5,
+            "align": "left"
+          },
+          {
+            "text": "Seite 2/4",
+            "x": 831.5,
+            "y": 747.0,
+            "align": "center"
+          }
+        ],
+        "metrics": [
+          {
+            "gauge_name": "ART_rAI_RH004_H",
+            "rect": [
+              1126,
+              297,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramRH.HI_RH3_H",
+            "_format": "%2.2f %%"
+          },
+          {
+            "gauge_name": "ART_rAI_RH004_HH",
+            "rect": [
+              1126,
+              244,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramRH.HI_RH3_HH",
+            "_format": "%2.2f %%"
+          },
+          {
+            "gauge_name": "ART_rAI_RH004_L",
+            "rect": [
+              1126,
+              351,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramRH.HI_RH3_L",
+            "_format": "%2.2f %%"
+          },
+          {
+            "gauge_name": "ART_rAI_RH004_LL",
+            "rect": [
+              1126,
+              407,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramRH.HI_RH3_LL",
+            "_format": "%2.2f %%"
+          }
+        ]
+      },
+      {
+        "name": "Setup_PT2",
+        "every": 1800,
+        "settle": 60,
+        "clicks": [
+          {
+            "text": "Setup",
+            "then": "Druck"
+          },
+          {
+            "text": "Druck",
+            "then": "Parameter: Drucktransmitter"
+          },
+          {
+            "text": "I<",
+            "then": "Seite 1/8"
+          },
+          {
+            "text": ">",
+            "then": "Seite 2/8"
+          }
+        ],
+        "expect_text": [
+          "PT002 - Istwert"
+        ],
+        "anchors": [
+          {
+            "text": "PT002 - Istwert",
+            "x": 276,
+            "y": 148.5,
+            "align": "left"
+          },
+          {
+            "text": "PT002 - Alarmgrenze  (L)",
+            "x": 276,
+            "y": 369.5,
+            "align": "left"
+          },
+          {
+            "text": "PT002 - Betriebsstunden gesamt",
+            "x": 276,
+            "y": 478.5,
+            "align": "left"
+          },
+          {
+            "text": "PT002 - Alarmgrenze Betriebsstunden (H)",
+            "x": 276,
+            "y": 587.5,
+            "align": "left"
+          },
+          {
+            "text": "Seite 2/8",
+            "x": 831.5,
+            "y": 747.0,
+            "align": "center"
+          }
+        ],
+        "metrics": [
+          {
+            "gauge_name": "ART_rAI_PT002",
+            "rect": [
+              1126,
+              131,
+              260,
+              35
+            ],
+            "_variable": "GVL_GENERAL.PR_PT2_IST",
+            "_format": "%2.3f Pa"
+          },
+          {
+            "gauge_name": "ART_rAI_PT002_H",
+            "rect": [
+              1126,
+              297,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramPT.PR_PT2_H",
+            "_format": "%2.2f Pa"
+          },
+          {
+            "gauge_name": "ART_rAI_PT002_HH",
+            "rect": [
+              1126,
+              244,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramPT.PR_PT2_HH",
+            "_format": "%2.2f Pa"
+          },
+          {
+            "gauge_name": "ART_rAI_PT002_L",
+            "rect": [
+              1126,
+              351,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramPT.PR_PT2_L",
+            "_format": "%2.2f Pa"
+          },
+          {
+            "gauge_name": "ART_rAI_PT002_LL",
+            "rect": [
+              1126,
+              407,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramPT.PR_PT2_LL",
+            "_format": "%2.2f Pa"
+          }
+        ]
+      },
+      {
+        "name": "Setup_PT5",
+        "every": 1800,
+        "settle": 60,
+        "clicks": [
+          {
+            "text": "Setup",
+            "then": "Druck"
+          },
+          {
+            "text": "Druck",
+            "then": "Parameter: Drucktransmitter"
+          },
+          {
+            "text": "I<",
+            "then": "Seite 1/8"
+          },
+          {
+            "text": ">",
+            "then": "Seite 2/8"
+          },
+          {
+            "text": ">",
+            "then": "Seite 3/8"
+          },
+          {
+            "text": ">",
+            "then": "Seite 4/8"
+          },
+          {
+            "text": ">",
+            "then": "Seite 5/8"
+          }
+        ],
+        "expect_text": [
+          "PT005 - Istwert"
+        ],
+        "anchors": [
+          {
+            "text": "PT005 - Istwert",
+            "x": 280,
+            "y": 44.5,
+            "align": "left"
+          },
+          {
+            "text": "PT005 - Alarmgrenze (H)",
+            "x": 276,
+            "y": 313.5,
+            "align": "left"
+          },
+          {
+            "text": "PT005 - Alarmgrenze (LL)",
+            "x": 276,
+            "y": 422.5,
+            "align": "left"
+          },
+          {
+            "text": "PT005 - Alarmgrenze Betriebsstunden (HH)",
+            "x": 276,
+            "y": 533.5,
+            "align": "left"
+          },
+          {
+            "text": "Seite 5/8",
+            "x": 831.5,
+            "y": 747.0,
+            "align": "center"
+          }
+        ],
+        "metrics": [
+          {
+            "gauge_name": "ART_rAI_PT005_H",
+            "rect": [
+              1126,
+              297,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramPT.PR_PT5_H",
+            "_format": "%2.2f Pa"
+          },
+          {
+            "gauge_name": "ART_rAI_PT005_HH",
+            "rect": [
+              1126,
+              244,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramPT.PR_PT5_HH",
+            "_format": "%2.2f Pa"
+          },
+          {
+            "gauge_name": "ART_rAI_PT005_L",
+            "rect": [
+              1126,
+              351,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramPT.PR_PT5_L",
+            "_format": "%2.2f Pa"
+          },
+          {
+            "gauge_name": "ART_rAI_PT005_LL",
+            "rect": [
+              1126,
+              407,
+              260,
+              35
+            ],
+            "_variable": "GVL_PERSISTENT.paramPT.PR_PT5_LL",
+            "_format": "%2.2f Pa"
+          }
+        ]
+      }
+    ],
+    "turns": true
+  },
+  {
+    "name": "RLT010115",
+    "url": "http://182.1.1.54/webvisu/webvisu.htm",
+    "viewport": [
+      1280,
+      1024
+    ],
+    "read_interval": 2,
+    "poll_delay_ms": 20000,
+    "nav_delay_ms": 1000,
+    "clicks": [
+      {
+        "text": "Select",
+        "then": "010115"
+      },
+      {
+        "text": "010115",
+        "then": "RLT 010115"
+      }
+    ],
+    "expect_text": [
+      "RLT 010115",
+      "TA-Smart (RV001)"
+    ],
+    "anchors": [
+      {
+        "text": "TA-Smart (RV001)",
+        "x": 264,
+        "y": 19.0,
+        "align": "right"
+      },
+      {
+        "text": "DBF001",
+        "x": 1660,
+        "y": 127.0,
+        "align": "right"
+      },
+      {
+        "text": "FLT002",
+        "x": 264,
+        "y": 308.5,
+        "align": "right"
+      },
+      {
+        "text": "VOT002",
+        "x": 264,
+        "y": 564.5,
+        "align": "right"
+      }
+    ],
+    "metrics": [
+      {
+        "gauge_name": "ART_dbf_paramDBF_IN_DBF_SOLL_010115",
+        "rect": [
+          1496,
+          185,
+          109,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramDBF.IN_DBF_SOLL_010115",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_mv_paramMV_RV_RV1_SOLL_010115",
+        "rect": [
+          104,
+          220,
+          109,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramMV.RV_RV1_SOLL_010115",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_PT005_010115",
+        "rect": [
+          821,
+          820,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.PR_PT5_IST_010115",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_PT005_SOLL_010115",
+        "rect": [
+          1065,
+          820,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramPT.PR_PT5_SOLL_010115",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_RH004_010115",
+        "rect": [
+          821,
+          787,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.HI_RH4_IST_010115",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_RH004_SOLL_010115",
+        "rect": [
+          1065,
+          787,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramRH.HI_RH3_SOLL_010115",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_TT004_010115",
+        "rect": [
+          822,
+          752,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.TI_TT4_IST_010115",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_TT004_SOLL_010115",
+        "rect": [
+          1065,
+          752,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramTT.TI_TT3_SOLL_010115",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAQ_MV002_010115",
+        "rect": [
+          104,
+          511,
+          109,
+          30
+        ],
+        "_variable": "GVL_IO_HwInterface_010115.AI_010115_MV002_posFlap_SKALIERTr",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rMBI_RV001_010115",
+        "rect": [
+          104,
+          257,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.RV_RV1_IST_010115",
+        "_format": "%2.2f"
+      }
+    ],
+    "pages": [],
+    "turns": true
+  },
+  {
+    "name": "RLT010203",
+    "url": "http://182.1.1.54/webvisu/webvisu.htm",
+    "viewport": [
+      1280,
+      1024
+    ],
+    "read_interval": 2,
+    "poll_delay_ms": 20000,
+    "nav_delay_ms": 1000,
+    "clicks": [
+      {
+        "text": "Select",
+        "then": "010203"
+      },
+      {
+        "text": "010203",
+        "then": "RLT 010203"
+      }
+    ],
+    "expect_text": [
+      "RLT 010203",
+      "TA-Smart (RV001)"
+    ],
+    "anchors": [
+      {
+        "text": "TA-Smart (RV001)",
+        "x": 265,
+        "y": 13.0,
+        "align": "right"
+      },
+      {
+        "text": "DBF001",
+        "x": 1659,
+        "y": 12.0,
+        "align": "right"
+      },
+      {
+        "text": "FLT002",
+        "x": 264,
+        "y": 312.0,
+        "align": "right"
+      },
+      {
+        "text": "JUMO (JM001)",
+        "x": 1660,
+        "y": 250.0,
+        "align": "right"
+      }
+    ],
+    "metrics": [
+      {
+        "gauge_name": "ART_dbf_paramDBF_IN_DBF_SOLL_010203",
+        "rect": [
+          1496,
+          75,
+          109,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramDBF.IN_DBF_SOLL_010203",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_mv_paramMV_RV_RV1_SOLL_010203",
+        "rect": [
+          104,
+          220,
+          109,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramMV.RV_RV1_SOLL_010203",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_RH004_010203",
+        "rect": [
+          805,
+          686,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.HI_RH4_IST_010203",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_RH004_SOLL_010203",
+        "rect": [
+          921,
+          686,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramRH.HI_RH3_SOLL_010203",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_TT004_010203",
+        "rect": [
+          806,
+          659,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.TI_TT4_IST_010203",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_TT004_SOLL_010203",
+        "rect": [
+          921,
+          659,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramTT.TI_TT3_SOLL_010203",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rMBI_RV001_010203",
+        "rect": [
+          104,
+          257,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.RV_RV1_IST_010203",
+        "_format": "%2.2f"
+      }
+    ],
+    "pages": [],
+    "turns": true
+  },
+  {
+    "name": "RLT010305",
+    "url": "http://182.1.1.54/webvisu/webvisu.htm",
+    "viewport": [
+      1280,
+      1024
+    ],
+    "read_interval": 2,
+    "poll_delay_ms": 20000,
+    "nav_delay_ms": 1000,
+    "clicks": [
+      {
+        "text": "Select",
+        "then": "010305"
+      },
+      {
+        "text": "010305",
+        "then": "RLT 010305"
+      }
+    ],
+    "expect_text": [
+      "RLT 010305",
+      "TA-Smart (RV001)"
+    ],
+    "anchors": [
+      {
+        "text": "TA-Smart (RV001)",
+        "x": 264,
+        "y": 19.0,
+        "align": "right"
+      },
+      {
+        "text": "DBF001",
+        "x": 1660,
+        "y": 127.0,
+        "align": "right"
+      },
+      {
+        "text": "FLT002",
+        "x": 264,
+        "y": 308.5,
+        "align": "right"
+      },
+      {
+        "text": "VOT002",
+        "x": 264,
+        "y": 564.5,
+        "align": "right"
+      }
+    ],
+    "metrics": [
+      {
+        "gauge_name": "ART_dbf_paramDBF_IN_DBF_SOLL_010305",
+        "rect": [
+          1496,
+          185,
+          109,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramDBF.IN_DBF_SOLL_010305",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_mv_paramMV_RV_RV1_SOLL_010305",
+        "rect": [
+          104,
+          220,
+          109,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramMV.RV_RV1_SOLL_010305",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_PT005_010305",
+        "rect": [
+          593,
+          790,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.PR_PT5_IST_010305",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_PT005_SOLL_010305",
+        "rect": [
+          698,
+          790,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramPT.PR_PT5_SOLL_010305",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_RH004_010305",
+        "rect": [
+          591,
+          767,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.HI_RH4_IST_010305",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rAI_RH004_SOLL_010305",
+        "rect": [
+          698,
+          767,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramRH.HI_RH3_SOLL_010305",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_TT004_010305",
+        "rect": [
+          592,
+          744,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.TI_TT4_IST_010305",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAI_TT004_SOLL_010305",
+        "rect": [
+          697,
+          744,
+          92,
+          30
+        ],
+        "_variable": "GVL_PERSISTENT.paramTT.TI_TT3_SOLL_010305",
+        "_format": "%2.3f"
+      },
+      {
+        "gauge_name": "ART_rAQ_MV002_010305",
+        "rect": [
+          104,
+          511,
+          109,
+          30
+        ],
+        "_variable": "GVL_IO_HwInterface_010305.AI_010305_MV002_posFlap_SKALIERTr",
+        "_format": "%2.2f"
+      },
+      {
+        "gauge_name": "ART_rMBI_RV001_010305",
+        "rect": [
+          104,
+          257,
+          109,
+          30
+        ],
+        "_variable": "GVL_GENERAL.RV_RV1_IST_010305",
+        "_format": "%2.2f"
+      }
+    ],
+    "pages": [],
+    "turns": true
+  }
+]

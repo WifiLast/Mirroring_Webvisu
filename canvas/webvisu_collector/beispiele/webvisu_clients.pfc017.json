@@ -1,0 +1,17 @@
+[
+    {
+        "name": "PFC017",
+        "url": "http://192.168.0.17/webvisu/webvisu.htm",
+        "viewport": [1280, 1024],
+        "read_interval": 2,
+        "expect_text": ["WebVisu Test - Main"],
+        "metrics": [
+            { "gauge_name": "T017_rFloat1", "x": 660, "y": 360, "label": "rFloat1" },
+            { "gauge_name": "T017_rFloat2", "label": "rFloat2" },
+            { "gauge_name": "T017_bBool1", "x": 660, "y": 567, "label": "bBool1" },
+            { "gauge_name": "T017_bBool2", "x": 660, "y": 671, "label": "bBool2" },
+            { "gauge_name": "T017_diCounter", "x": 660, "y": 982, "label": "diCounter" },
+            { "gauge_name": "T017_sString2_running", "x": 775, "y": 879, "label": "sString2", "map": { "State: RUNNING": 1, "State: IDLE": 0 } }
+        ]
+    }
+]
